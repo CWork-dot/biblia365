@@ -1,0 +1,296 @@
+// ============================================================
+// Biblia en un Año · ASJA — App de usuario (Firestore backend)
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, doc, getDoc, setDoc, serverTimestamp,
+  enableIndexedDbPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDIrtATxUSVv6W65sbSJUNQZ3ZBOnjZD4s",
+  authDomain: "biblia-asja-4aea4.firebaseapp.com",
+  projectId: "biblia-asja-4aea4",
+  storageBucket: "biblia-asja-4aea4.firebasestorage.app",
+  messagingSenderId: "761938941434",
+  appId: "1:761938941434:web:535acdd7499e82c5044043"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+// Persistencia offline: permite seguir usando la app sin conexión
+enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ignorar */ });
+
+(function(){
+  "use strict";
+
+  var PLAN = JSON.parse(document.getElementById('plan-data').textContent);
+  var DAYS = PLAN.days;
+  var PERIOD_ORDER = PLAN.period_order;
+
+  var userKey = null, userName = "", progress = {};
+  var saveTimer = null;
+
+  function slugify(name){
+    return name.trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')
+      .slice(0,60) || 'lector';
+  }
+
+  function userDocRef(key){ return doc(db, 'usuarios', key); }
+
+  async function loadProgressFor(name){
+    userName = name;
+    userKey  = slugify(name);
+    document.getElementById('avatarInitial').textContent = name.trim() ? name.trim()[0].toUpperCase() : '?';
+    setSavedTag('Cargando…');
+
+    if(!name.trim()){ progress = {}; renderAll(); setSavedTag(''); return; }
+
+    try {
+      var snap = await getDoc(userDocRef(userKey));
+      if(snap.exists()){
+        var data = snap.data();
+        progress = data.diasCompletados || {};
+      } else {
+        progress = {};
+        // crear el documento inicial
+        await setDoc(userDocRef(userKey), {
+          nombre: name.trim(),
+          diasCompletados: {},
+          creadoEn: serverTimestamp(),
+          ultimaActividad: serverTimestamp()
+        });
+      }
+      setSavedTag('Sincronizado');
+    } catch(e){
+      console.error('Error cargando progreso', e);
+      progress = {};
+      setSavedTag('Sin conexión — guardando local');
+    }
+    renderAll();
+  }
+
+  function setSavedTag(text){
+    var el = document.getElementById('savedTag');
+    if(!el) return;
+    el.textContent = text;
+  }
+
+  function saveProgress(){
+    if(!userKey) return;
+    setSavedTag('Guardando…');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){
+      setDoc(userDocRef(userKey), {
+        nombre: userName.trim(),
+        diasCompletados: progress,
+        ultimaActividad: serverTimestamp()
+      }, { merge: true }).then(function(){
+        setSavedTag('Guardado ✓');
+      }).catch(function(e){
+        console.error('Error guardando', e);
+        setSavedTag('Sin conexión — se guardará al volver');
+      });
+    }, 350); // debounce para no escribir en cada click si el usuario tilda rápido varios
+  }
+
+  function isDone(d){ return !!progress[String(d)]; }
+
+  function toggleDay(dayNum){
+    var k = String(dayNum);
+    if(progress[k]) delete progress[k]; else progress[k] = true;
+    saveProgress();
+    renderAll();
+  }
+
+  // ---- Name input ----
+  var nameInput = document.getElementById('userName');
+  nameInput.addEventListener('change', function(){ loadProgressFor(nameInput.value); });
+  nameInput.addEventListener('blur',   function(){ loadProgressFor(nameInput.value); });
+  nameInput.addEventListener('keydown',function(e){ if(e.key==='Enter') nameInput.blur(); });
+
+  // ---- Connection status ----
+  function renderConnStatus(){
+    var el = document.getElementById('connStatus');
+    if(navigator.onLine){
+      el.className = 'online';
+      el.innerHTML = '<span class="dot"></span> En línea';
+    } else {
+      el.className = 'offline';
+      el.innerHTML = '<span class="dot"></span> Sin conexión';
+    }
+  }
+  window.addEventListener('online', renderConnStatus);
+  window.addEventListener('offline', renderConnStatus);
+
+  // ---- Day state ----
+  var currentDay = 1;
+  function getDayData(n){ return DAYS[n-1]; }
+
+  function computeStreak(){
+    var max=0;
+    for(var i=1;i<=365;i++) if(isDone(i)) max=i;
+    if(!max) return 0;
+    var s=0;
+    for(var d=max;d>=1;d--){ if(isDone(d)) s++; else break; }
+    return s;
+  }
+
+  function renderStats(){
+    var done=Object.keys(progress).length, pct=Math.round((done/365)*100);
+    document.getElementById('statDone').textContent   = done;
+    document.getElementById('statRemain').textContent = 365-done;
+    document.getElementById('statStreak').textContent = computeStreak();
+    document.getElementById('pctLabel').textContent   = pct;
+    var C=238.76;
+    document.getElementById('ringFg').style.strokeDashoffset = C - C*pct/100;
+  }
+
+  function escapeHtml(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+  function renderToday(){
+    var d=getDayData(currentDay);
+    document.getElementById('dayEyebrow').textContent = 'Día '+d.day+' de 365';
+    document.getElementById('dayPeriod').textContent  = d.period;
+    var rows=[];
+    if(d.l1) rows.push({tag:'Primera lectura', ref:d.l1});
+    if(d.l2) rows.push({tag:'Segunda lectura', ref:d.l2});
+    if(d.l3) rows.push({tag:'Salmo / Proverbios / Cántico', ref:d.l3});
+    var done=isDone(d.day);
+    document.getElementById('dayReadings').innerHTML = rows.map(function(r){
+      return '<div class="read-row '+(done?'done':'')+'">'
+        +'<div class="read-check" data-action="toggle-today">'
+        +'<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        +'</div><div class="read-text"><div class="tag">'+r.tag+'</div><div class="ref">'+r.ref+'</div></div></div>';
+    }).join('');
+    document.querySelectorAll('#dayReadings [data-action="toggle-today"]').forEach(function(el){
+      el.addEventListener('click', function(){ toggleDay(currentDay); });
+    });
+    document.getElementById('prevDay').disabled = currentDay<=1;
+    document.getElementById('nextDay').disabled = currentDay>=365;
+    document.getElementById('dayJumpInput').value = currentDay;
+    renderEncouragement();
+  }
+
+  function renderEncouragement(){
+    var box=document.getElementById('encourageBox');
+    if(!userKey||!userName.trim()){
+      box.innerHTML='📖 &nbsp;Escribí tu nombre arriba para guardar tu progreso.'; return;
+    }
+    var streak=computeStreak(), done=Object.keys(progress).length;
+    if(done===0)
+      box.innerHTML='🙏 &nbsp;Bienvenido/a, '+escapeHtml(userName.trim())+'. Marcá la lectura de hoy cuando la termines.';
+    else if(isDone(currentDay))
+      box.innerHTML='✅ &nbsp;¡Lectura de hoy completada! Racha: '+streak+(streak===1?' día':' días')+'.';
+    else
+      box.innerHTML='✨ &nbsp;Vas por '+done+' de 365 días. ¡Seguí así, '+escapeHtml(userName.trim().split(' ')[0])+'!';
+  }
+
+  function periodRange(p){
+    var first=null,last=null,count=0,done=0;
+    DAYS.forEach(function(d){
+      if(d.period!==p) return;
+      if(first===null) first=d.day; last=d.day; count++;
+      if(isDone(d.day)) done++;
+    });
+    return {first:first,last:last,count:count,done:done};
+  }
+
+  function renderPeriods(){
+    document.getElementById('periodList').innerHTML = PERIOD_ORDER.map(function(p){
+      var r=periodRange(p), pct=Math.round((r.done/r.count)*100);
+      return '<div class="period-card" data-goto="'+r.first+'">'
+        +'<div class="period-card-top"><div class="title">'+p+'</div>'
+        +'<div class="range">Días '+r.first+'–'+r.last+'</div></div>'
+        +'<div class="period-bar"><div class="period-bar-fill" style="width:'+pct+'%"></div></div>'
+        +'<div class="pcount">'+r.done+' de '+r.count+' días leídos</div></div>';
+    }).join('');
+    document.querySelectorAll('#periodList .period-card').forEach(function(el){
+      el.addEventListener('click',function(){
+        currentDay=parseInt(el.getAttribute('data-goto'),10);
+        switchTab('today'); renderToday();
+      });
+    });
+  }
+
+  var listFilter='all';
+  function renderList(){
+    var filtered=DAYS.filter(function(d){
+      if(listFilter==='pending') return !isDone(d.day);
+      if(listFilter==='done')    return  isDone(d.day);
+      return true;
+    });
+    if(!filtered.length){ document.getElementById('fullList').innerHTML='<div class="empty-note">No hay días en esta categoría.</div>'; return; }
+    document.getElementById('fullList').innerHTML=filtered.map(function(d){
+      var refs=[d.l1,d.l2].filter(Boolean).join(' · '), done=isDone(d.day);
+      return '<div class="day-row '+(done?'done':'')+'" data-day="'+d.day+'">'
+        +'<div class="dnum">'+d.day+'</div>'
+        +'<div class="dcheck" data-action="toggle-list"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'
+        +'<div class="dtext"><div class="refs">'+refs+'</div><div class="psalm">'+(d.l3||'')+'</div></div>'
+        +'<button class="dgo" data-action="goto-list">Ver</button></div>';
+    }).join('');
+    document.querySelectorAll('#fullList [data-action="toggle-list"]').forEach(function(el){
+      el.addEventListener('click',function(e){ e.stopPropagation(); toggleDay(parseInt(el.closest('.day-row').getAttribute('data-day'),10)); });
+    });
+    document.querySelectorAll('#fullList [data-action="goto-list"]').forEach(function(el){
+      el.addEventListener('click',function(e){ e.stopPropagation(); currentDay=parseInt(el.closest('.day-row').getAttribute('data-day'),10); switchTab('today'); renderToday(); });
+    });
+  }
+
+  document.getElementById('listFilter').addEventListener('click',function(e){
+    var btn=e.target.closest('.chip'); if(!btn) return;
+    listFilter=btn.getAttribute('data-filter');
+    document.querySelectorAll('#listFilter .chip').forEach(function(c){ c.classList.remove('active'); });
+    btn.classList.add('active'); renderList();
+  });
+
+  function switchTab(name){
+    document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.toggle('active',b.getAttribute('data-tab')===name); });
+    ['today','periods','list'].forEach(function(t){ document.getElementById('tab-'+t).classList.toggle('hidden',t!==name); });
+  }
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      switchTab(btn.getAttribute('data-tab'));
+      if(btn.getAttribute('data-tab')==='periods') renderPeriods();
+      if(btn.getAttribute('data-tab')==='list')    renderList();
+    });
+  });
+
+  document.getElementById('prevDay').addEventListener('click',function(){ if(currentDay>1){ currentDay--; renderToday(); }});
+  document.getElementById('nextDay').addEventListener('click',function(){ if(currentDay<365){ currentDay++; renderToday(); }});
+  document.getElementById('dayJumpInput').addEventListener('change',function(e){
+    var v=Math.max(1,Math.min(365,parseInt(e.target.value,10)||1));
+    currentDay=v; renderToday();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click',function(){
+    if(!userKey||!userName.trim()){ alert('Escribí tu nombre primero.'); return; }
+    if(confirm('¿Reiniciar el progreso de '+userName.trim()+'? No se puede deshacer.')){
+      progress={}; saveProgress(); renderAll();
+    }
+  });
+
+  /* PWA install prompt */
+  var deferredPrompt=null;
+  window.addEventListener('beforeinstallprompt',function(e){
+    e.preventDefault(); deferredPrompt=e;
+    document.getElementById('installBanner').style.display='flex';
+  });
+  document.getElementById('installBtn').addEventListener('click',function(){
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(function(){ deferredPrompt=null; document.getElementById('installBanner').style.display='none'; });
+  });
+  document.getElementById('installDismiss').addEventListener('click',function(){ document.getElementById('installBanner').style.display='none'; });
+  window.addEventListener('appinstalled',function(){ document.getElementById('installBanner').style.display='none'; });
+
+  function renderAll(){ renderStats(); renderToday(); }
+
+  // ---- Init ----
+  currentDay = 1;
+  renderConnStatus();
+  renderAll();
+})();

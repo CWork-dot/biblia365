@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1C3968">
+<meta name="robots" content="noindex, nofollow">
+<title>Panel de coordinador · Biblia en un Año ASJA</title>
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <img src="icon-logo.png" alt="ASJA" onerror="this.style.display='none'">
+    <h2>Panel de coordinador</h2>
+    <p>Ingresá la contraseña para ver el progreso de lectura de todos los participantes.</p>
+    <input type="password" id="pwInput" placeholder="Contraseña">
+    <button id="loginBtn">Ingresar</button>
+    <div class="login-error" id="loginError">Contraseña incorrecta. Probá de nuevo.</div>
+  </div>
+</div>
+
+<!-- ===================== DASHBOARD ===================== -->
+<div class="hidden" id="dashScreen">
+
+  <div class="dash-header">
+    <div class="dash-header-top">
+      <div class="brand-row">
+        <img src="icon-logo.png" alt="ASJA" onerror="this.style.display='none'">
+        <h1>Progreso · Biblia en un Año</h1>
+      </div>
+      <button class="logoutBtn" id="logoutBtn">Cerrar sesión</button>
+    </div>
+    <div class="dash-stats">
+      <div class="dash-stat"><div class="num" id="dashTotalUsers">0</div><div class="lbl">Usuarios registrados</div></div>
+      <div class="dash-stat"><div class="num" id="dashActiveToday">0</div><div class="lbl">Activos hoy</div></div>
+      <div class="dash-stat"><div class="num" id="dashAvgPct">0%</div><div class="lbl">Avance promedio</div></div>
+      <div class="dash-stat"><div class="num" id="dashCompleted">0</div><div class="lbl">Completaron el plan</div></div>
+    </div>
+  </div>
+
+  <div class="dash-toolbar">
+    <input type="text" id="searchInput" placeholder="Buscar por nombre...">
+    <select id="statusFilter">
+      <option value="all">Todos los estados</option>
+      <option value="active">Activos (≤2 días)</option>
+      <option value="stale">Inactivos (esta semana)</option>
+      <option value="inactive">Inactivos (+1 semana)</option>
+    </select>
+    <button id="refreshBtn">↻ Actualizar</button>
+    <button id="exportBtn">⬇ Exportar CSV</button>
+  </div>
+
+  <div style="margin:0 18px 8px; font-size:12.5px; color:#6C757D;" id="resultCount"></div>
+
+  <div class="table-wrap">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th data-sort="nombre">Nombre <span class="arrow"></span></th>
+          <th data-sort="pct">Avance <span class="arrow">▼</span></th>
+          <th data-sort="done">Días leídos <span class="arrow"></span></th>
+          <th data-sort="streak">Racha <span class="arrow"></span></th>
+          <th>Estado</th>
+          <th data-sort="lastActive">Última actividad <span class="arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Asociación San Juan Apóstol · socsj.org<br>
+    <a href="index.html">Volver a la app de lectura</a>
+  </div>
+
+</div>
+
+<style>.hidden{display:none;}</style>
+<script type="module" src="coordinador.js"></script>
+</body>
+</html>
