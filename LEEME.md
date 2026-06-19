@@ -16,6 +16,10 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 | `icon-logo.png` | Logo ASJA usado en ambas páginas |
 | `firestore.rules` | Reglas de seguridad — **pegar en la consola de Firebase**, no se sube a GitHub |
 
+## Novedad: sugerencia de nombre
+
+Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
+
 ## Arreglo: la app ahora recuerda en qué día te quedaste
 
 Antes, cada vez que se cerraba y volvía a abrir la app, siempre mostraba el día 1 — eso hacía parecer que se "tildaba sola" una lectura, cuando en realidad era el estado real (viejo) del día 1 que ya tenías marcado de antes. Ahora la app guarda el último día que visitaste y te lleva directo ahí la próxima vez que entrás.

@@ -47,7 +47,9 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     document.getElementById('avatarInitial').textContent = name.trim() ? name.trim()[0].toUpperCase() : '?';
     setSavedTag('Cargando…');
 
-    if(!name.trim()){ progress = {}; currentDay = 1; renderAll(); setSavedTag(''); return; }
+    if(!name.trim()){ progress = {}; currentDay = 1; rememberNameOnThisDevice(''); renderAll(); setSavedTag(''); return; }
+
+    rememberNameOnThisDevice(name);
 
     try {
       var snap = await getDoc(userDocRef(userKey));
@@ -180,10 +182,23 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   }
 
   // ---- Name input ----
+  var LAST_NAME_KEY = 'biblia365_last_name';
   var nameInput = document.getElementById('userName');
   nameInput.addEventListener('change', function(){ loadProgressFor(nameInput.value); });
   nameInput.addEventListener('blur',   function(){ loadProgressFor(nameInput.value); });
   nameInput.addEventListener('keydown',function(e){ if(e.key==='Enter') nameInput.blur(); });
+
+  function rememberNameOnThisDevice(name){
+    try {
+      if(name && name.trim()) localStorage.setItem(LAST_NAME_KEY, name.trim());
+      else localStorage.removeItem(LAST_NAME_KEY);
+    } catch(e){ /* localStorage no disponible, no es crítico */ }
+  }
+
+  function getRememberedName(){
+    try { return localStorage.getItem(LAST_NAME_KEY) || ''; }
+    catch(e){ return ''; }
+  }
 
   // ---- Connection status ----
   function renderConnStatus(){
@@ -378,4 +393,10 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   currentDay = 1;
   renderConnStatus();
   renderAll();
+
+  var rememberedName = getRememberedName();
+  if(rememberedName){
+    nameInput.value = rememberedName;
+    loadProgressFor(rememberedName);
+  }
 })();
