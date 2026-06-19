@@ -84,6 +84,9 @@ body{background:var(--canvas);color:var(--ink);font-family:var(--sans);-webkit-f
 .day-row .dcheck svg{width:11px;height:11px;opacity:0;}
 .day-row.done .dcheck{background:var(--navy);border-color:var(--navy);}
 .day-row.done .dcheck svg{opacity:1;}
+.day-row.partial .dcheck{background:var(--paper);border-color:var(--sky);border-width:2px;}
+.day-row.partial .dcheck::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--sky);}
+.day-row.partial .dtext .refs{color:var(--ink);}
 .day-row .dtext{flex:1;min-width:0;}
 .day-row .dtext .refs{font-size:13.5px;font-weight:600;color:var(--ink);}
 .day-row.done .dtext .refs{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line);}

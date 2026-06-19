@@ -16,6 +16,12 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 | `icon-logo.png` | Logo ASJA usado en ambas páginas |
 | `firestore.rules` | Reglas de seguridad — **pegar en la consola de Firebase**, no se sube a GitHub |
 
+## Novedad: tildado independiente por lectura
+
+Cada día puede tener hasta 3 lecturas (primera lectura, segunda lectura, salmo/proverbio). Ahora cada una se tilda por separado, y el día solo se cuenta como **completado** cuando todas sus lecturas están tildadas. En la pestaña "Lista completa" vas a ver tres estados visuales: círculo vacío (sin empezar), círculo con un punto celeste (a mitad de camino), círculo azul lleno con check (completo).
+
+Si ya tenías usuarios con progreso guardado de antes de este cambio, sus días marcados como completos siguen contando como completos — no se pierde nada.
+
 ## Paso 1 — Pegar las reglas de seguridad en Firebase
 
 1. Entrá a [console.firebase.google.com](https://console.firebase.google.com) → tu proyecto `biblia-asja-4aea4`.

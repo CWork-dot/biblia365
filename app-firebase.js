@@ -97,11 +97,63 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     }, 350); // debounce para no escribir en cada click si el usuario tilda rápido varios
   }
 
-  function isDone(d){ return !!progress[String(d)]; }
+  // ---- Modelo de progreso por lectura individual ----
+  // progress[day] puede ser:
+  //   - true                          (formato viejo: día completo, sin detalle)
+  //   - { l1:true, l2:true, l3:true } (formato nuevo: detalle por lectura)
+  // getDayKeys(d) devuelve qué claves de lectura existen ese día (l1/l2/l3 según corresponda)
+  function getDayKeys(dayNum){
+    var d = getDayData(dayNum);
+    var keys = [];
+    if(d.l1) keys.push('l1');
+    if(d.l2) keys.push('l2');
+    if(d.l3) keys.push('l3');
+    return keys;
+  }
+
+  function isReadingDone(dayNum, key){
+    var entry = progress[String(dayNum)];
+    if(entry === true) return true; // formato viejo: se asume todo leído
+    return !!(entry && entry[key]);
+  }
+
+  function isDone(dayNum){
+    var entry = progress[String(dayNum)];
+    if(entry === true) return true;
+    if(!entry) return false;
+    var keys = getDayKeys(dayNum);
+    return keys.length>0 && keys.every(function(k){ return !!entry[k]; });
+  }
+
+  function toggleReading(dayNum, key){
+    var k = String(dayNum);
+    var entry = progress[k];
+    // migrar formato viejo (true) a objeto antes de tocar una lectura puntual
+    if(entry === true){
+      entry = {};
+      getDayKeys(dayNum).forEach(function(kk){ entry[kk]=true; });
+    }
+    if(!entry) entry = {};
+    entry[key] = !entry[key];
+    // si queda vacío (todas destildadas), eliminamos la entrada del día
+    var anyTrue = Object.keys(entry).some(function(kk){ return entry[kk]; });
+    if(anyTrue) progress[k] = entry;
+    else delete progress[k];
+    saveProgress();
+    renderAll();
+  }
 
   function toggleDay(dayNum){
+    // Mantenido por compatibilidad (usado en la lista completa): si el día
+    // está incompleto, lo marca completo; si está completo, lo destilda todo.
     var k = String(dayNum);
-    if(progress[k]) delete progress[k]; else progress[k] = true;
+    if(isDone(dayNum)){
+      delete progress[k];
+    } else {
+      var entry = {};
+      getDayKeys(dayNum).forEach(function(kk){ entry[kk]=true; });
+      progress[k] = entry;
+    }
     saveProgress();
     renderAll();
   }
@@ -130,6 +182,12 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   var currentDay = 1;
   function getDayData(n){ return DAYS[n-1]; }
 
+  function countDoneDays(){
+    var n=0;
+    for(var i=1;i<=365;i++) if(isDone(i)) n++;
+    return n;
+  }
+
   function computeStreak(){
     var max=0;
     for(var i=1;i<=365;i++) if(isDone(i)) max=i;
@@ -140,7 +198,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   }
 
   function renderStats(){
-    var done=Object.keys(progress).length, pct=Math.round((done/365)*100);
+    var done=countDoneDays(), pct=Math.round((done/365)*100);
     document.getElementById('statDone').textContent   = done;
     document.getElementById('statRemain').textContent = 365-done;
     document.getElementById('statStreak').textContent = computeStreak();
@@ -156,18 +214,18 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     document.getElementById('dayEyebrow').textContent = 'Día '+d.day+' de 365';
     document.getElementById('dayPeriod').textContent  = d.period;
     var rows=[];
-    if(d.l1) rows.push({tag:'Primera lectura', ref:d.l1});
-    if(d.l2) rows.push({tag:'Segunda lectura', ref:d.l2});
-    if(d.l3) rows.push({tag:'Salmo / Proverbios / Cántico', ref:d.l3});
-    var done=isDone(d.day);
+    if(d.l1) rows.push({tag:'Primera lectura', ref:d.l1, key:'l1'});
+    if(d.l2) rows.push({tag:'Segunda lectura', ref:d.l2, key:'l2'});
+    if(d.l3) rows.push({tag:'Salmo / Proverbios / Cántico', ref:d.l3, key:'l3'});
     document.getElementById('dayReadings').innerHTML = rows.map(function(r){
-      return '<div class="read-row '+(done?'done':'')+'">'
-        +'<div class="read-check" data-action="toggle-today">'
+      var checked = isReadingDone(d.day, r.key);
+      return '<div class="read-row '+(checked?'done':'')+'">'
+        +'<div class="read-check" data-action="toggle-reading" data-key="'+r.key+'">'
         +'<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
         +'</div><div class="read-text"><div class="tag">'+r.tag+'</div><div class="ref">'+r.ref+'</div></div></div>';
     }).join('');
-    document.querySelectorAll('#dayReadings [data-action="toggle-today"]').forEach(function(el){
-      el.addEventListener('click', function(){ toggleDay(currentDay); });
+    document.querySelectorAll('#dayReadings [data-action="toggle-reading"]').forEach(function(el){
+      el.addEventListener('click', function(){ toggleReading(currentDay, el.getAttribute('data-key')); });
     });
     document.getElementById('prevDay').disabled = currentDay<=1;
     document.getElementById('nextDay').disabled = currentDay>=365;
@@ -180,11 +238,14 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     if(!userKey||!userName.trim()){
       box.innerHTML='📖 &nbsp;Escribí tu nombre arriba para guardar tu progreso.'; return;
     }
-    var streak=computeStreak(), done=Object.keys(progress).length;
-    if(done===0)
+    var streak=computeStreak(), done=countDoneDays();
+    var dayHasAnyProgress = !!progress[String(currentDay)];
+    if(done===0 && !dayHasAnyProgress)
       box.innerHTML='🙏 &nbsp;Bienvenido/a, '+escapeHtml(userName.trim())+'. Marcá la lectura de hoy cuando la termines.';
     else if(isDone(currentDay))
       box.innerHTML='✅ &nbsp;¡Lectura de hoy completada! Racha: '+streak+(streak===1?' día':' días')+'.';
+    else if(dayHasAnyProgress)
+      box.innerHTML='📖 &nbsp;Vas a mitad de camino en el día de hoy — ¡terminá la lectura que falta!';
     else
       box.innerHTML='✨ &nbsp;Vas por '+done+' de 365 días. ¡Seguí así, '+escapeHtml(userName.trim().split(' ')[0])+'!';
   }
@@ -225,8 +286,11 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     });
     if(!filtered.length){ document.getElementById('fullList').innerHTML='<div class="empty-note">No hay días en esta categoría.</div>'; return; }
     document.getElementById('fullList').innerHTML=filtered.map(function(d){
-      var refs=[d.l1,d.l2].filter(Boolean).join(' · '), done=isDone(d.day);
-      return '<div class="day-row '+(done?'done':'')+'" data-day="'+d.day+'">'
+      var refs=[d.l1,d.l2].filter(Boolean).join(' · ');
+      var done=isDone(d.day);
+      var partial = !done && !!progress[String(d.day)];
+      var stateClass = done ? 'done' : (partial ? 'partial' : '');
+      return '<div class="day-row '+stateClass+'" data-day="'+d.day+'">'
         +'<div class="dnum">'+d.day+'</div>'
         +'<div class="dcheck" data-action="toggle-list"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'
         +'<div class="dtext"><div class="refs">'+refs+'</div><div class="psalm">'+(d.l3||'')+'</div></div>'

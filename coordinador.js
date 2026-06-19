@@ -31,6 +31,15 @@ const COORD_PASSWORD = "asja2026";
 (function(){
   "use strict";
 
+  var DAY_KEYS = JSON.parse(document.getElementById('day-keys-data').textContent);
+
+  function isDayComplete(entry, dayNum){
+    if(entry === true) return true; // formato viejo: día completo sin detalle
+    if(!entry) return false;
+    var keys = DAY_KEYS[String(dayNum)] || [];
+    return keys.length>0 && keys.every(function(k){ return !!entry[k]; });
+  }
+
   var allUsers = [];
   var sortKey = 'pct';
   var sortDir = 'desc';
@@ -82,11 +91,14 @@ const COORD_PASSWORD = "asja2026";
       snap.forEach(function(docSnap){
         var d = docSnap.data();
         var dias = d.diasCompletados || {};
-        var doneCount = Object.keys(dias).length;
+        var doneCount = 0;
+        for(var dayNum=1; dayNum<=365; dayNum++){
+          if(isDayComplete(dias[String(dayNum)], dayNum)) doneCount++;
+        }
         var maxDay = 0;
         Object.keys(dias).forEach(function(k){ var n=parseInt(k,10); if(n>maxDay) maxDay=n; });
         var streak = 0;
-        for(var x=maxDay; x>=1; x--){ if(dias[String(x)]) streak++; else break; }
+        for(var x=maxDay; x>=1; x--){ if(isDayComplete(dias[String(x)], x)) streak++; else break; }
         var lastTs = d.ultimaActividad ? d.ultimaActividad.toDate() : null;
         allUsers.push({
           id: docSnap.id,
