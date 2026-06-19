@@ -16,6 +16,12 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 | `icon-logo.png` | Logo ASJA usado en ambas páginas |
 | `firestore.rules` | Reglas de seguridad — **pegar en la consola de Firebase**, no se sube a GitHub |
 
+## Arreglo: la app ahora recuerda en qué día te quedaste
+
+Antes, cada vez que se cerraba y volvía a abrir la app, siempre mostraba el día 1 — eso hacía parecer que se "tildaba sola" una lectura, cuando en realidad era el estado real (viejo) del día 1 que ya tenías marcado de antes. Ahora la app guarda el último día que visitaste y te lleva directo ahí la próxima vez que entrás.
+
+**Importante:** este arreglo agrega un campo nuevo (`ultimoDia`) al documento de cada usuario en Firestore. Por eso, además de subir los archivos a GitHub, tenés que **volver a publicar las reglas de Firestore** (el archivo `firestore.rules` cambió para permitir este campo nuevo) — repetí el Paso 1 de abajo aunque ya lo hayas hecho antes.
+
 ## Novedad: tildado independiente por lectura
 
 Cada día puede tener hasta 3 lecturas (primera lectura, segunda lectura, salmo/proverbio). Ahora cada una se tilda por separado, y el día solo se cuenta como **completado** cuando todas sus lecturas están tildadas. En la pestaña "Lista completa" vas a ver tres estados visuales: círculo vacío (sin empezar), círculo con un punto celeste (a mitad de camino), círculo azul lleno con check (completo).

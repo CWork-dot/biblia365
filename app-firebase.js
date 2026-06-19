@@ -47,19 +47,22 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     document.getElementById('avatarInitial').textContent = name.trim() ? name.trim()[0].toUpperCase() : '?';
     setSavedTag('Cargando…');
 
-    if(!name.trim()){ progress = {}; renderAll(); setSavedTag(''); return; }
+    if(!name.trim()){ progress = {}; currentDay = 1; renderAll(); setSavedTag(''); return; }
 
     try {
       var snap = await getDoc(userDocRef(userKey));
       if(snap.exists()){
         var data = snap.data();
         progress = data.diasCompletados || {};
+        currentDay = clampDay(data.ultimoDia || 1);
       } else {
         progress = {};
+        currentDay = 1;
         // crear el documento inicial
         await setDoc(userDocRef(userKey), {
           nombre: name.trim(),
           diasCompletados: {},
+          ultimoDia: 1,
           creadoEn: serverTimestamp(),
           ultimaActividad: serverTimestamp()
         });
@@ -68,9 +71,16 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     } catch(e){
       console.error('Error cargando progreso', e);
       progress = {};
+      currentDay = 1;
       setSavedTag('Sin conexión — guardando local');
     }
     renderAll();
+  }
+
+  function clampDay(n){
+    n = parseInt(n,10);
+    if(isNaN(n)) return 1;
+    return Math.max(1, Math.min(365, n));
   }
 
   function setSavedTag(text){
@@ -87,6 +97,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       setDoc(userDocRef(userKey), {
         nombre: userName.trim(),
         diasCompletados: progress,
+        ultimoDia: currentDay,
         ultimaActividad: serverTimestamp()
       }, { merge: true }).then(function(){
         setSavedTag('Guardado ✓');
@@ -96,6 +107,16 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       });
     }, 350); // debounce para no escribir en cada click si el usuario tilda rápido varios
   }
+
+  function saveCurrentDay(){
+    // guarda solo qué día está mirando el usuario, sin tocar el resto del progreso
+    if(!userKey) return;
+    clearTimeout(dayTimer);
+    dayTimer = setTimeout(function(){
+      setDoc(userDocRef(userKey), { ultimoDia: currentDay }, { merge: true }).catch(function(){});
+    }, 350);
+  }
+  var dayTimer = null;
 
   // ---- Modelo de progreso por lectura individual ----
   // progress[day] puede ser:
@@ -272,7 +293,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     document.querySelectorAll('#periodList .period-card').forEach(function(el){
       el.addEventListener('click',function(){
         currentDay=parseInt(el.getAttribute('data-goto'),10);
-        switchTab('today'); renderToday();
+        switchTab('today'); renderToday(); saveCurrentDay();
       });
     });
   }
@@ -300,7 +321,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       el.addEventListener('click',function(e){ e.stopPropagation(); toggleDay(parseInt(el.closest('.day-row').getAttribute('data-day'),10)); });
     });
     document.querySelectorAll('#fullList [data-action="goto-list"]').forEach(function(el){
-      el.addEventListener('click',function(e){ e.stopPropagation(); currentDay=parseInt(el.closest('.day-row').getAttribute('data-day'),10); switchTab('today'); renderToday(); });
+      el.addEventListener('click',function(e){ e.stopPropagation(); currentDay=parseInt(el.closest('.day-row').getAttribute('data-day'),10); switchTab('today'); renderToday(); saveCurrentDay(); });
     });
   }
 
@@ -323,11 +344,11 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     });
   });
 
-  document.getElementById('prevDay').addEventListener('click',function(){ if(currentDay>1){ currentDay--; renderToday(); }});
-  document.getElementById('nextDay').addEventListener('click',function(){ if(currentDay<365){ currentDay++; renderToday(); }});
+  document.getElementById('prevDay').addEventListener('click',function(){ if(currentDay>1){ currentDay--; renderToday(); saveCurrentDay(); }});
+  document.getElementById('nextDay').addEventListener('click',function(){ if(currentDay<365){ currentDay++; renderToday(); saveCurrentDay(); }});
   document.getElementById('dayJumpInput').addEventListener('change',function(e){
     var v=Math.max(1,Math.min(365,parseInt(e.target.value,10)||1));
-    currentDay=v; renderToday();
+    currentDay=v; renderToday(); saveCurrentDay();
   });
 
   document.getElementById('resetBtn').addEventListener('click',function(){
