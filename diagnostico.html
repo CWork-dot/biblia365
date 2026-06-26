@@ -23,6 +23,15 @@
 <div id="output"></div>
 
 <script>
+window.__CAUGHT_ERRORS__ = [];
+window.addEventListener('error', function(e){
+  window.__CAUGHT_ERRORS__.push('ERROR: ' + e.message + ' en ' + e.filename + ':' + e.lineno);
+});
+window.addEventListener('unhandledrejection', function(e){
+  window.__CAUGHT_ERRORS__.push('PROMESA RECHAZADA: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+</script>
+<script>
 async function runDiagnostic(){
   var out = document.getElementById('output');
   out.innerHTML = '';
@@ -83,7 +92,23 @@ async function runDiagnostic(){
   // 4. Origen actual
   section('Origen actual (debe coincidir SIEMPRE)', location.origin + location.pathname);
 
-  // 8. Verificar el HTML real servido por el Service Worker (cache) ahora mismo
+  // 7b. Verificar específicamente app-shell.js (el script nuevo que separa
+  // la interfaz de la conexión a Firebase)
+  try {
+    var respShell = await fetch('./app-shell.js');
+    var textShell = await respShell.text();
+    var hasGetRememberedEmailShell = textShell.indexOf('getRememberedEmail') !== -1;
+    var hasBibliaBackend = textShell.indexOf('BibliaBackend') !== -1;
+    section('Contenido real de app-shell.js servido ahora (archivo NUEVO)',
+      respShell.status === 200
+        ? ('Tamaño: ' + textShell.length + ' caracteres\n' +
+           'Contiene getRememberedEmail: ' + hasGetRememberedEmailShell + '\n' +
+           'Contiene BibliaBackend: ' + hasBibliaBackend)
+        : ('NO SE ENCONTRÓ EL ARCHIVO (status ' + respShell.status + ') — probablemente no se subió a GitHub o no está cacheado'),
+      respShell.status === 200 && hasGetRememberedEmailShell);
+  } catch(e){
+    section('Contenido real de app-shell.js', 'ERROR al descargarlo: ' + e.message + ' — esto puede significar que el archivo no existe en este origen o no está cacheado para uso offline', false);
+  }
   try {
     var htmlResp = await fetch('./index.html');
     var htmlText = await htmlResp.text();
@@ -100,18 +125,97 @@ async function runDiagnostic(){
     section('HTML real servido (index.html)', 'ERROR: ' + e.message, false);
   }
 
-  // 9. Revisar si hay MÁS de un Service Worker o alguno en estado raro
-  if('serviceWorker' in navigator){
-    var allRegs = await navigator.serviceWorker.getRegistrations();
-    var regInfo = allRegs.map(function(r){
-      return 'Scope: ' + r.scope + ' | activo: ' + (r.active?r.active.state:'NINGUNO') +
-             ' | esperando: ' + (r.waiting?r.waiting.state:'ninguno') +
-             ' | instalando: ' + (r.installing?r.installing.state:'ninguno');
-    }).join('\n');
-    section('TODOS los Service Workers registrados (cualquier scope)',
-      allRegs.length ? regInfo : 'Ninguno',
-      allRegs.length === 1);
+  // 10. Cargar el index.html REAL en un iframe oculto, para ver si tira
+  // errores de JavaScript al ejecutarse (esto es lo más parecido a lo
+  // que pasa cuando abrís la app de verdad)
+  try {
+    var iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = './index.html';
+    document.body.appendChild(iframe);
+    await new Promise(function(resolve){ iframe.onload = resolve; setTimeout(resolve, 1500); });
+
+    var iframeWin = iframe.contentWindow;
+
+    // intentar instalar un listener de error DENTRO del iframe, aunque
+    // ya haya cargado (puede no capturar errores tempranos, pero ayuda)
+    var iframeErrorMsgs = [];
+    try {
+      iframeWin.addEventListener('error', function(e){ iframeErrorMsgs.push(e.message); });
+    } catch(e){}
+
+    await new Promise(function(resolve){ setTimeout(resolve, 1500); }); // dar tiempo a que corra el script
+
+    var emailFieldValue = 'NO SE PUDO LEER';
+    try {
+      emailFieldValue = iframeWin.document.getElementById('userName').value;
+    } catch(e){ emailFieldValue = 'ERROR AL LEER EL CAMPO: ' + e.message; }
+
+    var consoleAccessible = true;
+    try { iframeWin.console.log('test'); } catch(e){ consoleAccessible = false; }
+
+    section('Prueba real: cargar index.html en un iframe y ver qué pasa',
+      'Valor del campo mail DENTRO del iframe tras cargar: ' + JSON.stringify(emailFieldValue) + '\n' +
+      'Errores capturados dentro del iframe: ' + (iframeErrorMsgs.length ? iframeErrorMsgs.join(' | ') : 'ninguno (puede no haber alcanzado a instalarse a tiempo)'),
+      typeof emailFieldValue === 'string' && emailFieldValue.indexOf('@') !== -1);
+
+    document.body.removeChild(iframe);
+  } catch(e){
+    section('Prueba real: cargar index.html en un iframe', 'ERROR: ' + e.message, false);
   }
+
+  // 12. Cargar index.html en un iframe VISIBLE temporalmente y revisar
+  // el estado exacto del DOM tras un tiempo de espera, para ver
+  // exactamente qué se renderizó y qué no.
+  try {
+    var iframe2 = document.createElement('iframe');
+    iframe2.style.width = '1px';
+    iframe2.style.height = '1px';
+    iframe2.style.position = 'absolute';
+    iframe2.style.left = '-9999px';
+    iframe2.src = './index.html';
+    document.body.appendChild(iframe2);
+    await new Promise(function(resolve){ iframe2.onload = resolve; setTimeout(resolve, 1200); });
+    await new Promise(function(resolve){ setTimeout(resolve, 1500); });
+
+    var iw = iframe2.contentWindow;
+    var idoc = iw.document;
+
+    function safeText(id){
+      try { var el = idoc.getElementById(id); return el ? JSON.stringify(el.textContent) : 'ELEMENTO NO EXISTE'; }
+      catch(e){ return 'ERROR: ' + e.message; }
+    }
+    function safeHTML(id){
+      try { var el = idoc.getElementById(id); return el ? (el.innerHTML.length + ' caracteres de HTML, primeros 200: ' + JSON.stringify(el.innerHTML.slice(0,200))) : 'ELEMENTO NO EXISTE'; }
+      catch(e){ return 'ERROR: ' + e.message; }
+    }
+
+    var report = '';
+    report += 'dayEyebrow: ' + safeText('dayEyebrow') + '\n';
+    report += 'dayPeriod: ' + safeText('dayPeriod') + '\n';
+    report += 'dayReadings (HTML interno): ' + safeHTML('dayReadings') + '\n';
+    report += 'statDone: ' + safeText('statDone') + '\n';
+    report += 'connStatus clase: ' + (function(){ try { return idoc.getElementById('connStatus').className; } catch(e){ return 'ERROR'; } })() + '\n';
+    report += 'navigator.onLine dentro del iframe: ' + iw.navigator.onLine + '\n';
+
+    // Revisar si hay datos del plan cargados
+    try {
+      var planDataEl = idoc.getElementById('plan-data');
+      report += 'plan-data existe: ' + !!planDataEl + ', tamaño: ' + (planDataEl ? planDataEl.textContent.length : 0) + '\n';
+    } catch(e){ report += 'Error leyendo plan-data: ' + e.message + '\n'; }
+
+    section('Estado real del DOM dentro de index.html (tras 1.5s de carga)', report,
+      idoc.getElementById('dayReadings') && idoc.getElementById('dayReadings').innerHTML.length > 50);
+
+    document.body.removeChild(iframe2);
+  } catch(e){
+    section('Estado real del DOM dentro de index.html', 'ERROR GENERAL: ' + e.message + '\n' + e.stack, false);
+  }
+
+  // 13. Errores capturados globalmente durante todo el diagnóstico
+  section('Errores de JavaScript detectados en esta página',
+    window.__CAUGHT_ERRORS__.length ? window.__CAUGHT_ERRORS__.join('\n') : 'Ninguno',
+    window.__CAUGHT_ERRORS__.length === 0);
 
   // 6. Simulación exacta de lo que hace app-firebase.js al cargar
   try {
