@@ -20,6 +20,16 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 
 Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
 
+## Arreglo: la app sin conexión mostraba una versión vieja del código
+
+El Service Worker que armé la vez anterior usaba una estrategia "cache-first": si ya tenía algo guardado, lo mostraba de inmediato y recién después chequeaba si había una versión más nueva. El problema: como actualizamos el código varias veces seguidas (mail, racha, etc.), tu celular podía quedar mostrando una **mezcla de versiones viejas y nuevas** — por eso el mail no se recordaba sin conexión, aunque con conexión sí funcionaba bien (ahí el navegador alcanzaba a pedir la versión nueva a tiempo).
+
+Cambié la estrategia a "network-first": ahora, **siempre que haya conexión**, la app pide la versión más actual al servidor y la usa para actualizar lo guardado. Solo cuando no hay conexión, recurre a lo último que logró guardar. Esto evita que vuelvas a quedar con una versión vieja "trabada" después de futuras actualizaciones.
+
+**Paso obligatorio después de subir esto:** todos los celulares que ya tenían la app instalada (incluido el tuyo) necesitan **una visita más con conexión** para que el Service Worker viejo se reemplace por este nuevo. Después de esa visita, recién ahí probá el modo offline — debería funcionar con la información correcta.
+
+Si después de eso seguís viendo algo raro offline (mail vacío, progreso faltante), probá esto en el celular: Chrome → Configuración → Privacidad y seguridad → Borrar datos de navegación → marcar solo "Imágenes y archivos almacenados en caché" → borrar, y volvé a entrar una vez con conexión.
+
 ## Arreglo: la app ahora funciona sin conexión
 
 Hasta ahora la app nunca tuvo un Service Worker real — por eso, al abrirla sin internet (sobre todo la primera vez desde el ícono instalado), Chrome mostraba su error nativo de "sin conexión" (el dinosaurio) en vez de cargar la app.

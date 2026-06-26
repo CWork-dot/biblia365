@@ -1,13 +1,15 @@
 // ============================================================
 // Service Worker — Biblia en un Año · Asociación San Juan Apóstol
 // ============================================================
-// Estrategia: cache-first para los archivos propios de la app
-// (HTML, CSS, JS, manifest, íconos). Todo lo que vaya hacia otro
-// origen (Firebase, fuentes de Google, etc.) se deja pasar sin
-// intervenir — el Service Worker NUNCA cachea ni intercepta
-// llamadas a Firestore, porque eso rompería la sincronización.
+// Estrategia: NETWORK-FIRST para los archivos propios de la app
+// (HTML, CSS, JS, manifest, íconos). Si hay conexión, siempre se
+// pide la versión más nueva al servidor y se actualiza el caché.
+// Solo si no hay red se usa lo que quedó guardado de la última vez.
+// Todo lo que vaya hacia otro origen (Firebase, fuentes de Google,
+// etc.) se deja pasar sin intervenir — el Service Worker NUNCA
+// cachea ni intercepta llamadas a Firestore.
 
-const CACHE_NAME = 'biblia365-v3';
+const CACHE_NAME = 'biblia365-v4';
 
 const APP_SHELL = [
   './',
@@ -50,7 +52,7 @@ self.addEventListener('activate', function(event){
   );
 });
 
-// ---- Fetch: cache-first para el propio origen, red directa para todo lo demás ----
+// ---- Fetch: network-first para el propio origen, red directa para todo lo demás ----
 self.addEventListener('fetch', function(event){
   var req = event.request;
 
@@ -66,18 +68,18 @@ self.addEventListener('fetch', function(event){
   }
 
   event.respondWith(
-    caches.match(req).then(function(cached){
-      if(cached) {
-        // Cache-first: servimos lo guardado de inmediato, y en paralelo
-        // intentamos actualizar el caché para la próxima vez (si hay red).
-        fetchAndUpdateCache(req);
-        return cached;
+    fetch(req).then(function(networkResponse){
+      // Hay red: usamos SIEMPRE la versión del servidor (la más nueva)
+      // y de paso actualizamos el caché para la próxima vez sin conexión.
+      if(networkResponse && networkResponse.ok){
+        var copy = networkResponse.clone();
+        caches.open(CACHE_NAME).then(function(cache){ cache.put(req, copy); });
       }
-      // No estaba en caché: intentamos red, y si funciona lo guardamos.
-      return fetchAndUpdateCache(req).catch(function(){
-        // Sin red y sin caché para esta URL puntual: si es una navegación
-        // de página (el usuario abriendo la app), devolvemos al menos
-        // el index como fallback para que la app cargue igual.
+      return networkResponse;
+    }).catch(function(){
+      // Sin red: recién ahí recurrimos a lo que quedó guardado.
+      return caches.match(req).then(function(cached){
+        if(cached) return cached;
         if(req.mode === 'navigate'){
           return caches.match('./index.html');
         }
@@ -86,15 +88,3 @@ self.addEventListener('fetch', function(event){
     })
   );
 });
-
-function fetchAndUpdateCache(req){
-  return fetch(req).then(function(networkResponse){
-    if(networkResponse && networkResponse.ok){
-      var copy = networkResponse.clone();
-      caches.open(CACHE_NAME).then(function(cache){
-        cache.put(req, copy);
-      });
-    }
-    return networkResponse;
-  });
-}
