@@ -133,7 +133,7 @@ async function runDiagnostic(){
     iframe.style.display = 'none';
     iframe.src = './index.html';
     document.body.appendChild(iframe);
-    await new Promise(function(resolve){ iframe.onload = resolve; setTimeout(resolve, 1500); });
+    await new Promise(function(resolve){ iframe.onload = resolve; setTimeout(resolve, 2000); });
 
     var iframeWin = iframe.contentWindow;
 
@@ -144,7 +144,7 @@ async function runDiagnostic(){
       iframeWin.addEventListener('error', function(e){ iframeErrorMsgs.push(e.message); });
     } catch(e){}
 
-    await new Promise(function(resolve){ setTimeout(resolve, 1500); }); // dar tiempo a que corra el script
+    await new Promise(function(resolve){ setTimeout(resolve, 3000); }); // dar tiempo a que corra el script
 
     var emailFieldValue = 'NO SE PUDO LEER';
     try {
@@ -247,6 +247,30 @@ async function runDiagnostic(){
           section('Contenido de la base IndexedDB de Firestore: ' + firestoreDbName.name,
             'Object stores encontrados: ' + storeNames.join(', '),
             storeNames.length > 0);
+
+          // Intentar leer el contenido real de remoteDocumentsV14 (o similar),
+          // que es donde Firestore guarda los documentos cacheados para uso offline
+          var docsStoreName = storeNames.find(function(n){ return n.toLowerCase().indexOf('remotedocument') !== -1; });
+          if(docsStoreName){
+            try {
+              var tx = idb.transaction([docsStoreName], 'readonly');
+              var store = tx.objectStore(docsStoreName);
+              var allRecords = await new Promise(function(resolve, reject){
+                var req = store.getAll();
+                req.onsuccess = function(){ resolve(req.result); };
+                req.onerror = function(){ reject(req.error); };
+              });
+              var preview = JSON.stringify(allRecords).slice(0, 1500);
+              section('Documentos guardados localmente en "' + docsStoreName + '" (caché offline real)',
+                'Cantidad de registros: ' + allRecords.length + '\n' +
+                'Contiene "ceciliaf": ' + (JSON.stringify(allRecords).indexOf('ceciliaf') !== -1) + '\n' +
+                'Vista previa (primeros 1500 caracteres):\n' + preview,
+                allRecords.length > 0);
+            } catch(e){
+              section('Documentos guardados localmente', 'ERROR al leerlos: ' + e.message, false);
+            }
+          }
+
           idb.close();
         } catch(e){
           section('Contenido de la base IndexedDB de Firestore', 'ERROR al abrirla: ' + e.message, false);

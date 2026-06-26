@@ -9,7 +9,7 @@
 // etc.) se deja pasar sin intervenir — el Service Worker NUNCA
 // cachea ni intercepta llamadas a Firestore.
 
-const CACHE_NAME = 'biblia365-v8';
+const CACHE_NAME = 'biblia365-v9';
 
 const APP_SHELL = [
   './',

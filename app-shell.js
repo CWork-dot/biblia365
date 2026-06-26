@@ -473,13 +473,14 @@
   var rememberedEmail = getRememberedEmail();
   if(rememberedEmail){
     nameInput.value = rememberedEmail;
-    // Esperamos un instante breve a que app-firebase.js (que es un módulo
-    // y carga de forma diferida) tenga oportunidad de sobreescribir
-    // window.BibliaBackend con la versión real conectada a Firestore.
-    // Si nunca llega (por ejemplo, sin conexión real), seguimos igual
-    // con el backend de respaldo tras ese breve margen — la persona ve
-    // su mail y puede usar la app, simplemente sin progreso sincronizado.
-    waitForRealBackend(800).then(function(){
+    // Esperamos a que app-firebase.js (que es un módulo y carga de forma
+    // diferida) tenga oportunidad de sobreescribir window.BibliaBackend
+    // con la versión real conectada a Firestore. Si nunca llega (por
+    // ejemplo, sin conexión real), seguimos igual con el backend de
+    // respaldo tras ese margen — la persona ve su mail y puede usar la
+    // app, simplemente sin progreso sincronizado para esta sesión.
+    setSavedTag('Cargando…');
+    waitForRealBackend(3000).then(function(){
       loadProgressFor(rememberedEmail);
     });
   }
