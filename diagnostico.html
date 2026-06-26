@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnóstico · Biblia 365</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#F4F6F9;color:#222;padding:20px;line-height:1.5;}
+  h1{font-size:20px;color:#1C3968;}
+  h2{font-size:15px;color:#1C3968;margin-top:28px;border-bottom:1px solid #ddd;padding-bottom:6px;}
+  .box{background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px;margin-top:10px;font-size:13px;white-space:pre-wrap;word-break:break-all;}
+  .ok{color:#1E7A3D;font-weight:bold;}
+  .bad{color:#B42318;font-weight:bold;}
+  button{background:#1C3968;color:#fff;border:none;border-radius:8px;padding:12px 18px;font-size:14px;margin-top:16px;width:100%;}
+</style>
+</head>
+<body>
+<h1>Diagnóstico — Biblia 365</h1>
+<p>Esta página solo LEE información de tu navegador, no cambia nada. Mandá captura de lo que aparece abajo.</p>
+
+<button onclick="runDiagnostic()">Ejecutar diagnóstico</button>
+
+<div id="output"></div>
+
+<script>
+async function runDiagnostic(){
+  var out = document.getElementById('output');
+  out.innerHTML = '';
+
+  function section(title, content, isOk){
+    var cls = isOk === true ? 'ok' : (isOk === false ? 'bad' : '');
+    out.innerHTML += '<h2>'+title+'</h2><div class="box"><span class="'+cls+'">'+content+'</span></div>';
+  }
+
+  // 1. localStorage
+  try {
+    var lastEmail = localStorage.getItem('biblia365_last_email');
+    section('Mail recordado en este navegador (localStorage)',
+      lastEmail ? ('Encontrado: ' + lastEmail) : 'VACÍO — no hay nada guardado',
+      !!lastEmail);
+  } catch(e){
+    section('Mail recordado en este navegador (localStorage)', 'ERROR: ' + e.message, false);
+  }
+
+  try {
+    var allKeys = Object.keys(localStorage);
+    section('Todas las claves en localStorage de este sitio', allKeys.length ? allKeys.join('\n') : 'VACÍO total');
+  } catch(e){
+    section('Todas las claves en localStorage', 'ERROR: ' + e.message, false);
+  }
+
+  // 2. Service Worker
+  if('serviceWorker' in navigator){
+    var reg = await navigator.serviceWorker.getRegistration();
+    if(reg){
+      section('Service Worker registrado',
+        'Sí. Estado: ' + (reg.active ? reg.active.state : 'sin worker activo') +
+        '\nScope: ' + reg.scope +
+        '\nScript URL: ' + (reg.active ? reg.active.scriptURL : 'N/A'),
+        !!reg.active);
+    } else {
+      section('Service Worker registrado', 'NO HAY NINGÚN SERVICE WORKER REGISTRADO en este origen', false);
+    }
+  } else {
+    section('Service Worker', 'Este navegador no soporta Service Workers', false);
+  }
+
+  // 3. Caches
+  if('caches' in window){
+    var cacheNames = await caches.keys();
+    section('Cachés existentes', cacheNames.length ? cacheNames.join('\n') : 'NINGÚN CACHÉ EXISTE', cacheNames.length>0);
+
+    for(var i=0;i<cacheNames.length;i++){
+      var cache = await caches.open(cacheNames[i]);
+      var reqs = await cache.keys();
+      var urls = reqs.map(function(r){ return r.url; });
+      section('Contenido del caché "'+cacheNames[i]+'"', urls.length ? urls.join('\n') : 'VACÍO');
+    }
+  } else {
+    section('Cache API', 'No soportada en este navegador', false);
+  }
+
+  // 4. Origen actual
+  section('Origen actual (debe coincidir SIEMPRE)', location.origin + location.pathname);
+
+  // 5. Estado de conexión
+  section('Estado de conexión reportado por el navegador',
+    navigator.onLine ? 'ONLINE' : 'OFFLINE');
+}
+</script>
+</body>
+</html>
