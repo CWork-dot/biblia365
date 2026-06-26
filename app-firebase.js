@@ -27,7 +27,11 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 
-enableIndexedDbPersistence(db).catch(function(err){
+window.__FIRESTORE_PERSISTENCE_STATUS__ = 'pendiente';
+enableIndexedDbPersistence(db).then(function(){
+  window.__FIRESTORE_PERSISTENCE_STATUS__ = 'habilitada';
+}).catch(function(err){
+  window.__FIRESTORE_PERSISTENCE_STATUS__ = 'FALLÓ: ' + (err && err.code ? err.code : err);
   console.warn('No se pudo habilitar persistencia offline de Firestore', err);
 });
 

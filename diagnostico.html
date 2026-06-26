@@ -154,6 +154,17 @@ async function runDiagnostic(){
     var consoleAccessible = true;
     try { iframeWin.console.log('test'); } catch(e){ consoleAccessible = false; }
 
+    var persistenceStatus = 'NO DISPONIBLE (puede no haber alcanzado a cargar Firebase a tiempo)';
+    try {
+      if(iframeWin.__FIRESTORE_PERSISTENCE_STATUS__ !== undefined){
+        persistenceStatus = iframeWin.__FIRESTORE_PERSISTENCE_STATUS__;
+      }
+    } catch(e){ persistenceStatus = 'ERROR AL LEER: ' + e.message; }
+
+    section('Estado de la persistencia offline de Firestore (clave para entender el progreso offline)',
+      'Estado: ' + persistenceStatus,
+      persistenceStatus === 'habilitada');
+
     section('Prueba real: cargar index.html en un iframe y ver qué pasa',
       'Valor del campo mail DENTRO del iframe tras cargar: ' + JSON.stringify(emailFieldValue) + '\n' +
       'Errores capturados dentro del iframe: ' + (iframeErrorMsgs.length ? iframeErrorMsgs.join(' | ') : 'ninguno (puede no haber alcanzado a instalarse a tiempo)'),
@@ -212,7 +223,43 @@ async function runDiagnostic(){
     section('Estado real del DOM dentro de index.html', 'ERROR GENERAL: ' + e.message + '\n' + e.stack, false);
   }
 
-  // 13. Errores capturados globalmente durante todo el diagnóstico
+  // 14. Verificar específicamente la base de datos IndexedDB que usa
+  // Firestore para su caché offline — esto nos dice si alguna vez
+  // se guardó algo ahí con éxito.
+  try {
+    if('indexedDB' in window && indexedDB.databases){
+      var dbs = await indexedDB.databases();
+      var dbInfo = dbs.map(function(d){ return d.name + ' (v' + d.version + ')'; }).join('\n');
+      section('Bases de datos IndexedDB en este navegador',
+        dbs.length ? dbInfo : 'NINGUNA — esto puede significar que Firestore nunca llegó a guardar nada localmente',
+        dbs.length > 0);
+
+      // Buscar específicamente la de firestore y ver si tiene datos
+      var firestoreDbName = dbs.find(function(d){ return d.name && d.name.indexOf('firestore') !== -1; });
+      if(firestoreDbName){
+        try {
+          var openReq = indexedDB.open(firestoreDbName.name);
+          var idb = await new Promise(function(resolve, reject){
+            openReq.onsuccess = function(){ resolve(openReq.result); };
+            openReq.onerror = function(){ reject(openReq.error); };
+          });
+          var storeNames = Array.from(idb.objectStoreNames);
+          section('Contenido de la base IndexedDB de Firestore: ' + firestoreDbName.name,
+            'Object stores encontrados: ' + storeNames.join(', '),
+            storeNames.length > 0);
+          idb.close();
+        } catch(e){
+          section('Contenido de la base IndexedDB de Firestore', 'ERROR al abrirla: ' + e.message, false);
+        }
+      }
+    } else {
+      section('Bases de datos IndexedDB', 'indexedDB.databases() no soportado en este navegador', false);
+    }
+  } catch(e){
+    section('Bases de datos IndexedDB', 'ERROR: ' + e.message, false);
+  }
+
+  // 15. Errores capturados globalmente durante todo el diagnóstico
   section('Errores de JavaScript detectados en esta página',
     window.__CAUGHT_ERRORS__.length ? window.__CAUGHT_ERRORS__.join('\n') : 'Ninguno',
     window.__CAUGHT_ERRORS__.length === 0);
