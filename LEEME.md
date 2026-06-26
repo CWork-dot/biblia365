@@ -20,6 +20,19 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 
 Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
 
+## Arreglo: instancias viejas de la app que quedaban "pegadas" en memoria
+
+Encontré un problema adicional relacionado al anterior: cuando Android mantiene la PWA en segundo plano (al apretar el botón Home en vez de cerrarla del todo), el Service Worker puede actualizarse de fondo, pero el código JavaScript que ya estaba cargado en esa pestaña **sigue corriendo en memoria con la versión vieja** hasta que se recarga. Esto puede causar comportamientos inconsistentes como que el mail recordado no aparezca, aunque esté bien guardado.
+
+Agregué dos cosas:
+
+1. **Recarga automática:** cuando el navegador detecta que hay una versión nueva del Service Worker lista para tomar control, la app se recarga sola una vez para asegurarse de usar siempre el código más reciente.
+2. **Botón "Actualizar app"** (al lado de "Reiniciar mi progreso"): por si en algún momento algo queda trabado en un dispositivo. Al tocarlo, borra todo lo cacheado y fuerza una descarga completa y fresca de la app — no borra el progreso de lectura (eso vive en Firebase, no en el caché del navegador).
+
+**Si Cecilia (o cualquier otro usuario) sigue viendo el problema después de esta actualización, decile que toque el botón "Actualizar app" una vez con conexión.** Eso debería resolver cualquier estado raro que haya quedado de versiones anteriores.
+
+También agregué un archivo de diagnóstico (`diagnostico.html`) que podés subir junto con los demás — es una página que muestra qué hay guardado en el navegador de cualquier persona, útil si en el futuro alguien reporta un problema similar y necesitás ver qué está pasando en su dispositivo sin tener que adivinar.
+
 ## Arreglo: la app sin conexión mostraba una versión vieja del código
 
 El Service Worker que armé la vez anterior usaba una estrategia "cache-first": si ya tenía algo guardado, lo mostraba de inmediato y recién después chequeaba si había una versión más nueva. El problema: como actualizamos el código varias veces seguidas (mail, racha, etc.), tu celular podía quedar mostrando una **mezcla de versiones viejas y nuevas** — por eso el mail no se recordaba sin conexión, aunque con conexión sí funcionaba bien (ahí el navegador alcanzaba a pedir la versión nueva a tiempo).

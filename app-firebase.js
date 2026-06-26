@@ -458,6 +458,41 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     navigator.serviceWorker.register('./sw.js').catch(function(err){
       console.warn('No se pudo registrar el Service Worker', err);
     });
+
+    // Si en algún momento un Service Worker NUEVO toma control de esta
+    // página (por ejemplo, porque acabamos de subir una actualización),
+    // recargamos una sola vez para asegurarnos de que el HTML y el JS
+    // que se están ejecutando sean la versión más reciente — sin esto,
+    // una pestaña/PWA que quedó abierta en segundo plano puede seguir
+    // corriendo código viejo en memoria aunque el caché ya se actualizó.
+    var swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if(swRefreshing) return;
+      swRefreshing = true;
+      window.location.reload();
+    });
+  }
+
+  // Botón manual "Actualizar app": para casos donde, por cualquier motivo,
+  // la app quedó mostrando una versión vieja. Borra todo lo cacheado y
+  // fuerza una recarga completa desde el servidor.
+  var updateBtn = document.getElementById('updateAppBtn');
+  if(updateBtn){
+    updateBtn.addEventListener('click', async function(){
+      updateBtn.textContent = 'Actualizando…';
+      try {
+        if('serviceWorker' in navigator){
+          var regs = await navigator.serviceWorker.getRegistrations();
+          for(var i=0;i<regs.length;i++){ await regs[i].unregister(); }
+        }
+        if('caches' in window){
+          var keys = await caches.keys();
+          for(var j=0;j<keys.length;j++){ await caches.delete(keys[j]); }
+        }
+      } catch(e){ console.warn('Error al actualizar', e); }
+      // recarga forzando ignorar caché del navegador
+      window.location.reload(true);
+    });
   }
 
   function renderAll(){ renderStats(); renderToday(); }

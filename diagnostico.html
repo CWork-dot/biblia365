@@ -83,9 +83,65 @@ async function runDiagnostic(){
   // 4. Origen actual
   section('Origen actual (debe coincidir SIEMPRE)', location.origin + location.pathname);
 
-  // 5. Estado de conexión
-  section('Estado de conexión reportado por el navegador',
-    navigator.onLine ? 'ONLINE' : 'OFFLINE');
+  // 8. Verificar el HTML real servido por el Service Worker (cache) ahora mismo
+  try {
+    var htmlResp = await fetch('./index.html');
+    var htmlText = await htmlResp.text();
+    var hasUserNameInput = htmlText.indexOf('id="userName"') !== -1;
+    var hasInstallBanner = htmlText.indexOf('installBanner') !== -1;
+    var scriptTag = htmlText.match(/<script[^>]*src="([^"]*app-firebase[^"]*)"/);
+    section('HTML real servido ahora (index.html)',
+      'Tamaño: ' + htmlText.length + ' caracteres\n' +
+      'Contiene input id="userName": ' + hasUserNameInput + '\n' +
+      'Contiene banner de instalación: ' + hasInstallBanner + '\n' +
+      'Script app-firebase referenciado como: ' + (scriptTag ? scriptTag[1] : 'NO ENCONTRADO'),
+      hasUserNameInput);
+  } catch(e){
+    section('HTML real servido (index.html)', 'ERROR: ' + e.message, false);
+  }
+
+  // 9. Revisar si hay MÁS de un Service Worker o alguno en estado raro
+  if('serviceWorker' in navigator){
+    var allRegs = await navigator.serviceWorker.getRegistrations();
+    var regInfo = allRegs.map(function(r){
+      return 'Scope: ' + r.scope + ' | activo: ' + (r.active?r.active.state:'NINGUNO') +
+             ' | esperando: ' + (r.waiting?r.waiting.state:'ninguno') +
+             ' | instalando: ' + (r.installing?r.installing.state:'ninguno');
+    }).join('\n');
+    section('TODOS los Service Workers registrados (cualquier scope)',
+      allRegs.length ? regInfo : 'Ninguno',
+      allRegs.length === 1);
+  }
+
+  // 6. Simulación exacta de lo que hace app-firebase.js al cargar
+  try {
+    var emailKey = localStorage.getItem('biblia365_last_email');
+    var detailLog = 'Paso 1 - leer biblia365_last_email: ' + JSON.stringify(emailKey) + '\n';
+    if(emailKey){
+      detailLog += 'Paso 2 - el código debería poner este valor en el campo de mail y llamar loadProgressFor()\n';
+      detailLog += 'Paso 3 - slug que generaría: ' + emailKey.trim().toLowerCase().replace(/[^a-z0-9@._-]+/g,'').replace(/[@.]+/g,'-').replace(/^-+|-+$/g,'') + '\n';
+    } else {
+      detailLog += 'PROBLEMA: no hay nada en biblia365_last_email, por eso el campo queda vacío.\n';
+    }
+    section('Simulación de la lógica de autocompletado', detailLog, !!emailKey);
+  } catch(e){
+    section('Simulación de la lógica de autocompletado', 'ERROR: ' + e.message, false);
+  }
+
+  // 7. Intentar cargar el script real de la app y ver si hay errores de sintaxis/carga
+  try {
+    var resp = await fetch('./app-firebase.js');
+    var text = await resp.text();
+    var hasGetRemembered = text.indexOf('getRememberedEmail') !== -1;
+    var hasInitCall = text.indexOf('var rememberedEmail = getRememberedEmail()') !== -1;
+    section('Contenido real de app-firebase.js servido ahora',
+      'Tamaño: ' + text.length + ' caracteres\n' +
+      'Contiene función getRememberedEmail: ' + hasGetRemembered + '\n' +
+      'Contiene llamada de inicio a getRememberedEmail: ' + hasInitCall,
+      hasGetRemembered && hasInitCall);
+  } catch(e){
+    section('Contenido real de app-firebase.js', 'ERROR al descargarlo: ' + e.message, false);
+  }
 }
 </script>
 </body>

@@ -276,6 +276,13 @@ const COORD_PASSWORD = "asja2026";
     navigator.serviceWorker.register('./sw.js').catch(function(err){
       console.warn('No se pudo registrar el Service Worker', err);
     });
+
+    var swRefreshingCoord = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if(swRefreshingCoord) return;
+      swRefreshingCoord = true;
+      window.location.reload();
+    });
   }
 
 })();
