@@ -20,7 +20,20 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 
 Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
 
-## Arreglo: encontrado el bug real del mail vacío sin conexión
+## Arreglo definitivo: encontrada la causa raíz real del problema offline
+
+Después de varias vueltas, con tu ayuda y las capturas de diagnóstico, encontramos la causa de fondo: `app-firebase.js` es un **módulo de JavaScript** (necesario porque así se distribuye el SDK de Firebase), y los módulos tienen una regla estricta: si el `import` no se puede resolver (sin conexión real a internet, justo lo que pasa offline), **el archivo entero no ejecuta ninguna línea** — ni siquiera código que esté escrito antes del import. Por eso, aunque yo había movido el código del mail al principio del archivo, eso no alcanzaba: si Firebase no podía conectarse, todo el script quedaba sin ejecutarse, incluyendo el día, las lecturas, y todo lo demás.
+
+**La solución de fondo:** separé la app en dos archivos nuevos:
+
+- **`app-shell.js`**: toda la interfaz (mostrar el día, las lecturas, navegar, marcar lecturas, sugerir el mail, etc.). Es un script normal, no un módulo — así que **siempre** se ejecuta, sin importar si hay conexión o no.
+- **`app-firebase.js`**: ahora solo se encarga de conectar con la base de datos en la nube. Si no puede cargar (sin red), la app sigue funcionando igual visualmente, simplemente sin sincronizar con la nube hasta que vuelva la conexión.
+
+Estos dos archivos se comunican mediante una capita simple (`window.BibliaBackend`), así que aunque la conexión a Firebase falle por completo, la persona puede seguir viendo y marcando sus lecturas con normalidad — el progreso se guarda apenas vuelva a haber señal.
+
+**Importante:** subí los 2 archivos nuevos (`app-shell.js` además del `app-firebase.js` actualizado) junto con el resto. Si falta `app-shell.js`, la app no va a funcionar en absoluto, ni online ni offline.
+
+## Arreglo: encontrado el bug real del mail vacío sin conexión (parcial — ver arreglo definitivo arriba)
 
 Gracias a la página de diagnóstico pudimos confirmarlo con datos reales: el mail SÍ estaba guardado correctamente en el celular, el Service Worker funcionaba bien, y el código estaba actualizado. El problema real era otro: si algo fallaba al inicializar la conexión con Firebase (lo cual puede pasar, por ejemplo, si la PWA quedó abierta en background y se generan conflictos de bloqueo en el almacenamiento interno del navegador entre instancias), **todo el resto del código de la app se detenía silenciosamente** — incluida la línea que pone el mail guardado en el campo, aunque esa línea no tuviera nada que ver con el problema de fondo.
 
