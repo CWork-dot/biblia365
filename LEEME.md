@@ -20,6 +20,14 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 
 Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
 
+## Arreglo: encontrado el bug real del mail vacío sin conexión
+
+Gracias a la página de diagnóstico pudimos confirmarlo con datos reales: el mail SÍ estaba guardado correctamente en el celular, el Service Worker funcionaba bien, y el código estaba actualizado. El problema real era otro: si algo fallaba al inicializar la conexión con Firebase (lo cual puede pasar, por ejemplo, si la PWA quedó abierta en background y se generan conflictos de bloqueo en el almacenamiento interno del navegador entre instancias), **todo el resto del código de la app se detenía silenciosamente** — incluida la línea que pone el mail guardado en el campo, aunque esa línea no tuviera nada que ver con el problema de fondo.
+
+Reorganicé el código para que completar el campo de mail sea **lo primero que pasa, en un bloque separado y protegido**, antes de que la app intente siquiera tocar Firebase. Así, pase lo que pase con la conexión a la base de datos, el mail siempre va a aparecer. También agregué un límite de tiempo de espera (6 segundos) para que, si la consulta a Firestore se queda colgada sin responder, la app no se quede trabada para siempre — después de ese tiempo, simplemente avisa "Sin conexión" y deja seguir usando la app con los datos que tenga disponibles.
+
+Si después de este cambio alguien todavía ve algo raro, pedile que toque **"Actualizar app"** (frente al botón de reiniciar progreso) con conexión, y volvé a usar la página de **Diagnóstico** si hace falta investigar más.
+
 ## Arreglo: instancias viejas de la app que quedaban "pegadas" en memoria
 
 Encontré un problema adicional relacionado al anterior: cuando Android mantiene la PWA en segundo plano (al apretar el botón Home en vez de cerrarla del todo), el Service Worker puede actualizarse de fondo, pero el código JavaScript que ya estaba cargado en esa pestaña **sigue corriendo en memoria con la versión vieja** hasta que se recarga. Esto puede causar comportamientos inconsistentes como que el mail recordado no aparezca, aunque esté bien guardado.

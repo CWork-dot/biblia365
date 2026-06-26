@@ -1,6 +1,22 @@
 // ============================================================
 // Biblia en un Año · ASJA — App de usuario (Firestore backend)
 // ============================================================
+
+// PASO 0 — CRÍTICO: completar el campo de mail con lo que haya quedado
+// recordado en este dispositivo ANTES que cualquier otra cosa, incluso
+// antes de tocar Firebase. Así, pase lo que pase más abajo con la
+// conexión a la base de datos, la persona ve su mail enseguida.
+(function(){
+  "use strict";
+  try {
+    var savedEmail = localStorage.getItem('biblia365_last_email');
+    var input = document.getElementById('userName');
+    if(savedEmail && input){ input.value = savedEmail; }
+  } catch(e){
+    console.warn('No se pudo precompletar el mail recordado', e);
+  }
+})();
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, doc, getDoc, setDoc, serverTimestamp,
@@ -16,11 +32,22 @@ const firebaseConfig = {
   appId: "1:761938941434:web:535acdd7499e82c5044043"
 };
 
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
-
-// Persistencia offline: permite seguir usando la app sin conexión
-enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ignorar */ });
+var fbApp, db;
+var firebaseInitError = null;
+try {
+  fbApp = initializeApp(firebaseConfig);
+  db = getFirestore(fbApp);
+  // Persistencia offline: permite seguir usando la app sin conexión.
+  // Si falla (por ejemplo, por haber otra pestaña/instancia abierta
+  // con el mismo origen), lo ignoramos: la app sigue funcionando,
+  // simplemente sin caché local de Firestore en esta pestaña puntual.
+  enableIndexedDbPersistence(db).catch(function(err){
+    console.warn('No se pudo habilitar persistencia offline de Firestore', err);
+  });
+} catch(e){
+  firebaseInitError = e;
+  console.error('Error inicializando Firebase', e);
+}
 
 (function(){
   "use strict";
@@ -63,11 +90,22 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       return;
     }
 
+    // Si Firebase no llegó a inicializarse (por ejemplo, sin red en el
+    // momento exacto de cargar la página), no intentamos usar getDoc/setDoc
+    // — mostramos progreso vacío para este dispositivo y avisamos.
+    if(firebaseInitError){
+      rememberEmailOnThisDevice(trimmed);
+      progress = {}; completedDates = {}; currentDay = 1;
+      setSavedTag('Sin conexión — no se pudo cargar el progreso');
+      renderAll();
+      return;
+    }
+
     setSavedTag('Cargando…');
     rememberEmailOnThisDevice(trimmed);
 
     try {
-      var snap = await getDoc(userDocRef(userKey));
+      var snap = await withTimeout(getDoc(userDocRef(userKey)), 6000);
       if(snap.exists()){
         var data = snap.data();
         progress = data.diasCompletados || {};
@@ -492,6 +530,20 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       } catch(e){ console.warn('Error al actualizar', e); }
       // recarga forzando ignorar caché del navegador
       window.location.reload(true);
+    });
+  }
+
+  // Envuelve una promesa con un límite de tiempo: si no resuelve ni
+  // rechaza en ese plazo, se da por "perdida" — esto evita que la app
+  // quede congelada para siempre si Firestore se queda esperando
+  // indefinidamente (puede pasar sin conexión en algunos casos).
+  function withTimeout(promise, ms){
+    return new Promise(function(resolve, reject){
+      var timer = setTimeout(function(){
+        reject(new Error('Tiempo de espera agotado'));
+      }, ms);
+      promise.then(function(v){ clearTimeout(timer); resolve(v); },
+                   function(e){ clearTimeout(timer); reject(e); });
     });
   }
 
