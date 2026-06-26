@@ -40,6 +40,43 @@ const COORD_PASSWORD = "asja2026";
     return keys.length>0 && keys.every(function(k){ return !!entry[k]; });
   }
 
+  function computeCalendarStreakFromDates(fechas){
+    var dates = Object.keys(fechas || {}).filter(function(k){ return fechas[k]; });
+    if(!dates.length) return 0;
+    dates.sort();
+    var mostRecent = dates[dates.length-1];
+    var mostRecentDate = parseDateKey(mostRecent);
+    var todayStr = todayKeyLocal();
+    var today = parseDateKey(todayStr);
+    var diffDaysFromToday = Math.round((today - mostRecentDate) / 86400000);
+    if(diffDaysFromToday > 1) return 0;
+
+    var dateSet = {};
+    dates.forEach(function(k){ dateSet[k] = true; });
+    var streak = 0;
+    var cursor = mostRecentDate;
+    while(dateSet[formatDateKey(cursor)]){
+      streak++;
+      cursor = new Date(cursor.getTime() - 86400000);
+    }
+    return streak;
+  }
+
+  function todayKeyLocal(){
+    var d = new Date();
+    return formatDateKey(d);
+  }
+  function parseDateKey(key){
+    var parts = key.split('-');
+    return new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+  }
+  function formatDateKey(date){
+    var y = date.getFullYear();
+    var m = String(date.getMonth()+1).padStart(2,'0');
+    var d = String(date.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+d;
+  }
+
   var allUsers = [];
   var sortKey = 'pct';
   var sortDir = 'desc';
@@ -95,14 +132,11 @@ const COORD_PASSWORD = "asja2026";
         for(var dayNum=1; dayNum<=365; dayNum++){
           if(isDayComplete(dias[String(dayNum)], dayNum)) doneCount++;
         }
-        var maxDay = 0;
-        Object.keys(dias).forEach(function(k){ var n=parseInt(k,10); if(n>maxDay) maxDay=n; });
-        var streak = 0;
-        for(var x=maxDay; x>=1; x--){ if(isDayComplete(dias[String(x)], x)) streak++; else break; }
+        var streak = computeCalendarStreakFromDates(d.fechasCompletadas || {});
         var lastTs = d.ultimaActividad ? d.ultimaActividad.toDate() : null;
         allUsers.push({
           id: docSnap.id,
-          nombre: d.nombre || docSnap.id,
+          email: d.email || docSnap.id,
           done: doneCount,
           pct: Math.round((doneCount/365)*100),
           streak: streak,
@@ -157,7 +191,7 @@ const COORD_PASSWORD = "asja2026";
 
     if(searchTerm.trim()){
       var t = searchTerm.trim().toLowerCase();
-      rows = rows.filter(function(u){ return u.nombre.toLowerCase().indexOf(t) !== -1; });
+      rows = rows.filter(function(u){ return u.email.toLowerCase().indexOf(t) !== -1; });
     }
     if(statusFilter !== 'all'){
       rows = rows.filter(function(u){ return statusOf(u) === statusFilter; });
@@ -165,7 +199,7 @@ const COORD_PASSWORD = "asja2026";
 
     rows.sort(function(a,b){
       var av = a[sortKey], bv = b[sortKey];
-      if(sortKey === 'nombre'){ av = av.toLowerCase(); bv = bv.toLowerCase(); }
+      if(sortKey === 'email'){ av = av.toLowerCase(); bv = bv.toLowerCase(); }
       if(sortKey === 'lastActive'){ av = av ? av.getTime() : 0; bv = bv ? bv.getTime() : 0; }
       if(av < bv) return sortDir === 'asc' ? -1 : 1;
       if(av > bv) return sortDir === 'asc' ? 1 : -1;
@@ -185,7 +219,7 @@ const COORD_PASSWORD = "asja2026";
       var st = statusOf(u);
       var stLabel = st==='active' ? 'Activo' : st==='stale' ? 'Inactivo (semana)' : 'Inactivo';
       return '<tr>'
-        +'<td class="u-name">'+escapeHtml(u.nombre)+'</td>'
+        +'<td class="u-name">'+escapeHtml(u.email)+'</td>'
         +'<td><div class="u-bar-wrap"><div class="u-bar"><div class="u-bar-fill" style="width:'+u.pct+'%"></div></div><span class="u-pct">'+u.pct+'%</span></div></td>'
         +'<td>'+u.done+' / 365</td>'
         +'<td>'+u.streak+(u.streak===1?' día':' días')+'</td>'
@@ -202,7 +236,7 @@ const COORD_PASSWORD = "asja2026";
     th.addEventListener('click', function(){
       var key = th.getAttribute('data-sort');
       if(sortKey === key){ sortDir = sortDir==='asc' ? 'desc' : 'asc'; }
-      else { sortKey = key; sortDir = key==='nombre' ? 'asc' : 'desc'; }
+      else { sortKey = key; sortDir = key==='email' ? 'asc' : 'desc'; }
       document.querySelectorAll('th[data-sort] .arrow').forEach(function(a){ a.textContent=''; });
       th.querySelector('.arrow').textContent = sortDir==='asc' ? '▲' : '▼';
       renderTable();
@@ -219,9 +253,9 @@ const COORD_PASSWORD = "asja2026";
 
   // ---- Export CSV ----
   document.getElementById('exportBtn').addEventListener('click', function(){
-    var rows = [['Nombre','Días leídos','Porcentaje','Racha','Última actividad']];
+    var rows = [['Mail','Días leídos','Porcentaje','Racha','Última actividad']];
     allUsers.forEach(function(u){
-      rows.push([u.nombre, u.done, u.pct+'%', u.streak, formatDate(u.lastActive)]);
+      rows.push([u.email, u.done, u.pct+'%', u.streak, formatDate(u.lastActive)]);
     });
     var csv = rows.map(function(r){
       return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(',');
@@ -236,5 +270,12 @@ const COORD_PASSWORD = "asja2026";
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   });
+
+  /* Service Worker: habilita que el panel también abra sin conexión */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(function(err){
+      console.warn('No se pudo registrar el Service Worker', err);
+    });
+  }
 
 })();

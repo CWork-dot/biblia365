@@ -29,41 +29,59 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   var DAYS = PLAN.days;
   var PERIOD_ORDER = PLAN.period_order;
 
-  var userKey = null, userName = "", progress = {};
+  var userKey = null, userEmail = "", progress = {};
   var saveTimer = null;
 
-  function slugify(name){
-    return name.trim().toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-      .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')
-      .slice(0,60) || 'lector';
+  function isValidEmail(email){
+    // validación básica: algo@algo.algo
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  function slugifyEmail(email){
+    return email.trim().toLowerCase()
+      .replace(/[^a-z0-9@._-]+/g,'')
+      .replace(/[@.]+/g,'-')
+      .replace(/^-+|-+$/g,'')
+      .slice(0,100) || 'lector';
   }
 
   function userDocRef(key){ return doc(db, 'usuarios', key); }
 
-  async function loadProgressFor(name){
-    userName = name;
-    userKey  = slugify(name);
-    document.getElementById('avatarInitial').textContent = name.trim() ? name.trim()[0].toUpperCase() : '?';
+  async function loadProgressFor(email){
+    var trimmed = email.trim();
+    userEmail = trimmed;
+    userKey  = trimmed ? slugifyEmail(trimmed) : null;
+    document.getElementById('avatarInitial').textContent = trimmed ? trimmed[0].toUpperCase() : '?';
+    setSavedTag('');
+
+    if(!trimmed){ progress = {}; completedDates = {}; currentDay = 1; rememberEmailOnThisDevice(''); renderAll(); setSavedTag(''); return; }
+
+    if(!isValidEmail(trimmed)){
+      setSavedTag('Mail inválido');
+      progress = {}; completedDates = {}; currentDay = 1;
+      renderAll();
+      return;
+    }
+
     setSavedTag('Cargando…');
-
-    if(!name.trim()){ progress = {}; currentDay = 1; rememberNameOnThisDevice(''); renderAll(); setSavedTag(''); return; }
-
-    rememberNameOnThisDevice(name);
+    rememberEmailOnThisDevice(trimmed);
 
     try {
       var snap = await getDoc(userDocRef(userKey));
       if(snap.exists()){
         var data = snap.data();
         progress = data.diasCompletados || {};
+        completedDates = data.fechasCompletadas || {};
         currentDay = clampDay(data.ultimoDia || 1);
       } else {
         progress = {};
+        completedDates = {};
         currentDay = 1;
         // crear el documento inicial
         await setDoc(userDocRef(userKey), {
-          nombre: name.trim(),
+          email: trimmed,
           diasCompletados: {},
+          fechasCompletadas: {},
           ultimoDia: 1,
           creadoEn: serverTimestamp(),
           ultimaActividad: serverTimestamp()
@@ -73,6 +91,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     } catch(e){
       console.error('Error cargando progreso', e);
       progress = {};
+      completedDates = {};
       currentDay = 1;
       setSavedTag('Sin conexión — guardando local');
     }
@@ -97,8 +116,9 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
       setDoc(userDocRef(userKey), {
-        nombre: userName.trim(),
+        email: userEmail.trim(),
         diasCompletados: progress,
+        fechasCompletadas: completedDates,
         ultimoDia: currentDay,
         ultimaActividad: serverTimestamp()
       }, { merge: true }).then(function(){
@@ -119,6 +139,59 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     }, 350);
   }
   var dayTimer = null;
+
+  // ---- Registro de fechas con actividad (para la racha por calendario) ----
+  var completedDates = {}; // { "2026-06-20": true, ... }
+
+  function todayKey(){
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth()+1).padStart(2,'0');
+    var day = String(d.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+day;
+  }
+
+  function markTodayCompletedIfNeeded(dayNum){
+    // se llama después de tildar una lectura; si ese día del plan quedó
+    // completo, registra la fecha calendario de HOY como "con actividad"
+    if(isDone(dayNum)){
+      completedDates[todayKey()] = true;
+    }
+  }
+
+  function computeCalendarStreak(){
+    var dates = Object.keys(completedDates).filter(function(k){ return completedDates[k]; });
+    if(!dates.length) return 0;
+    dates.sort(); // orden ascendente YYYY-MM-DD ordena correctamente como string
+    var mostRecent = dates[dates.length-1];
+    var mostRecentDate = parseDateKey(mostRecent);
+    var today = parseDateKey(todayKey());
+    var diffDaysFromToday = Math.round((today - mostRecentDate) / 86400000);
+    // si la fecha más reciente con actividad es de hace más de 1 día,
+    // la racha ya está cortada (no se completó ni hoy ni ayer)
+    if(diffDaysFromToday > 1) return 0;
+
+    var streak = 0;
+    var cursor = mostRecentDate;
+    var dateSet = {};
+    dates.forEach(function(k){ dateSet[k] = true; });
+    while(dateSet[formatDateKey(cursor)]){
+      streak++;
+      cursor = new Date(cursor.getTime() - 86400000);
+    }
+    return streak;
+  }
+
+  function parseDateKey(key){
+    var parts = key.split('-');
+    return new Date(parseInt(parts[0],10), parseInt(parts[1],10)-1, parseInt(parts[2],10));
+  }
+  function formatDateKey(date){
+    var y = date.getFullYear();
+    var m = String(date.getMonth()+1).padStart(2,'0');
+    var d = String(date.getDate()).padStart(2,'0');
+    return y+'-'+m+'-'+d;
+  }
 
   // ---- Modelo de progreso por lectura individual ----
   // progress[day] puede ser:
@@ -162,6 +235,7 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     var anyTrue = Object.keys(entry).some(function(kk){ return entry[kk]; });
     if(anyTrue) progress[k] = entry;
     else delete progress[k];
+    markTodayCompletedIfNeeded(dayNum);
     saveProgress();
     renderAll();
   }
@@ -177,26 +251,27 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
       getDayKeys(dayNum).forEach(function(kk){ entry[kk]=true; });
       progress[k] = entry;
     }
+    markTodayCompletedIfNeeded(dayNum);
     saveProgress();
     renderAll();
   }
 
-  // ---- Name input ----
-  var LAST_NAME_KEY = 'biblia365_last_name';
+  // ---- Email input ----
+  var LAST_EMAIL_KEY = 'biblia365_last_email';
   var nameInput = document.getElementById('userName');
   nameInput.addEventListener('change', function(){ loadProgressFor(nameInput.value); });
   nameInput.addEventListener('blur',   function(){ loadProgressFor(nameInput.value); });
   nameInput.addEventListener('keydown',function(e){ if(e.key==='Enter') nameInput.blur(); });
 
-  function rememberNameOnThisDevice(name){
+  function rememberEmailOnThisDevice(email){
     try {
-      if(name && name.trim()) localStorage.setItem(LAST_NAME_KEY, name.trim());
-      else localStorage.removeItem(LAST_NAME_KEY);
+      if(email && email.trim()) localStorage.setItem(LAST_EMAIL_KEY, email.trim());
+      else localStorage.removeItem(LAST_EMAIL_KEY);
     } catch(e){ /* localStorage no disponible, no es crítico */ }
   }
 
-  function getRememberedName(){
-    try { return localStorage.getItem(LAST_NAME_KEY) || ''; }
+  function getRememberedEmail(){
+    try { return localStorage.getItem(LAST_EMAIL_KEY) || ''; }
     catch(e){ return ''; }
   }
 
@@ -224,20 +299,11 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
     return n;
   }
 
-  function computeStreak(){
-    var max=0;
-    for(var i=1;i<=365;i++) if(isDone(i)) max=i;
-    if(!max) return 0;
-    var s=0;
-    for(var d=max;d>=1;d--){ if(isDone(d)) s++; else break; }
-    return s;
-  }
-
   function renderStats(){
     var done=countDoneDays(), pct=Math.round((done/365)*100);
     document.getElementById('statDone').textContent   = done;
     document.getElementById('statRemain').textContent = 365-done;
-    document.getElementById('statStreak').textContent = computeStreak();
+    document.getElementById('statStreak').textContent = computeCalendarStreak();
     document.getElementById('pctLabel').textContent   = pct;
     var C=238.76;
     document.getElementById('ringFg').style.strokeDashoffset = C - C*pct/100;
@@ -271,19 +337,19 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
 
   function renderEncouragement(){
     var box=document.getElementById('encourageBox');
-    if(!userKey||!userName.trim()){
-      box.innerHTML='📖 &nbsp;Escribí tu nombre arriba para guardar tu progreso.'; return;
+    if(!userKey||!userEmail.trim()){
+      box.innerHTML='📖 &nbsp;Ingresá tu mail arriba para guardar tu progreso.'; return;
     }
-    var streak=computeStreak(), done=countDoneDays();
+    var streak=computeCalendarStreak(), done=countDoneDays();
     var dayHasAnyProgress = !!progress[String(currentDay)];
     if(done===0 && !dayHasAnyProgress)
-      box.innerHTML='🙏 &nbsp;Bienvenido/a, '+escapeHtml(userName.trim())+'. Marcá la lectura de hoy cuando la termines.';
+      box.innerHTML='🙏 &nbsp;¡Bienvenido/a! Marcá la lectura de hoy cuando la termines.';
     else if(isDone(currentDay))
       box.innerHTML='✅ &nbsp;¡Lectura de hoy completada! Racha: '+streak+(streak===1?' día':' días')+'.';
     else if(dayHasAnyProgress)
       box.innerHTML='📖 &nbsp;Vas a mitad de camino en el día de hoy — ¡terminá la lectura que falta!';
     else
-      box.innerHTML='✨ &nbsp;Vas por '+done+' de 365 días. ¡Seguí así, '+escapeHtml(userName.trim().split(' ')[0])+'!';
+      box.innerHTML='✨ &nbsp;Vas por '+done+' de 365 días. ¡Seguí así!';
   }
 
   function periodRange(p){
@@ -367,8 +433,8 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   });
 
   document.getElementById('resetBtn').addEventListener('click',function(){
-    if(!userKey||!userName.trim()){ alert('Escribí tu nombre primero.'); return; }
-    if(confirm('¿Reiniciar el progreso de '+userName.trim()+'? No se puede deshacer.')){
+    if(!userKey||!userEmail.trim()){ alert('Ingresá tu mail primero.'); return; }
+    if(confirm('¿Reiniciar tu progreso? No se puede deshacer.')){
       progress={}; saveProgress(); renderAll();
     }
   });
@@ -387,6 +453,13 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   document.getElementById('installDismiss').addEventListener('click',function(){ document.getElementById('installBanner').style.display='none'; });
   window.addEventListener('appinstalled',function(){ document.getElementById('installBanner').style.display='none'; });
 
+  /* Service Worker: habilita que la app abra sin conexión */
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('./sw.js').catch(function(err){
+      console.warn('No se pudo registrar el Service Worker', err);
+    });
+  }
+
   function renderAll(){ renderStats(); renderToday(); }
 
   // ---- Init ----
@@ -394,9 +467,9 @@ enableIndexedDbPersistence(db).catch(()=>{ /* ya habilitado en otra pestaña, ig
   renderConnStatus();
   renderAll();
 
-  var rememberedName = getRememberedName();
-  if(rememberedName){
-    nameInput.value = rememberedName;
-    loadProgressFor(rememberedName);
+  var rememberedEmail = getRememberedEmail();
+  if(rememberedEmail){
+    nameInput.value = rememberedEmail;
+    loadProgressFor(rememberedEmail);
   }
 })();
