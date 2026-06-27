@@ -20,6 +20,16 @@ conectados a tu proyecto de Firebase (`biblia-asja-4aea4`).
 
 Cada dispositivo recuerda el último nombre usado en él y lo precarga automáticamente en el campo al abrir la app — así no hay que tipearlo cada vez. Si otra persona usa el mismo teléfono, simplemente borra el campo y escribe el suyo, igual que siempre; a partir de ahí el dispositivo va a sugerir ese nombre nuevo. Esto se guarda solo en el teléfono (no en la nube), así que no afecta el progreso de nadie ni este paso requiere tocar nada en Firebase.
 
+## Arreglo: causa específica de iPhone — respaldo local del progreso
+
+Confirmamos algo clave: el problema solo pasaba en iPhone, no en la compu. Investigué y encontré la explicación: **Safari en iOS es mucho más agresivo que otros navegadores borrando el almacenamiento interno de las apps** (la base de datos donde Firestore guarda su caché para uso offline). Apple puede limpiar esos datos si la app no se usa seguido, y a veces incluso con más frecuencia que eso — es una limitación conocida y documentada de iOS, no algo que se pueda evitar por completo desde el código.
+
+En vez de seguir peleando contra esa limitación de Apple, agregué una **red de seguridad independiente**: cada vez que se guarda el progreso, además de mandarlo a la nube, se guarda una copia simple en el mismo lugar donde ya guardamos el mail recordado (`localStorage`) — que es mucho más simple y estable, y no sufre el mismo problema de borrado agresivo. Si alguna vez la conexión con la nube falla y no hay caché disponible, la app usa esa copia de respaldo en vez de mostrar todo vacío.
+
+También agregué un pedido de "almacenamiento persistente" al sistema (`navigator.storage.persist()`), que reduce (sin garantizar al 100%) la probabilidad de que iOS borre esos datos.
+
+**Para probarlo:** misma secuencia de siempre — abrir con internet, ver el progreso, modo avión, cerrar y reabrir. Esta vez debería aparecer con el mensaje "Sin conexión — mostrando tu último progreso guardado" en vez de aparecer en cero.
+
 ## Arreglo definitivo: encontrada la causa raíz real del problema offline
 
 Después de varias vueltas, con tu ayuda y las capturas de diagnóstico, encontramos la causa de fondo: `app-firebase.js` es un **módulo de JavaScript** (necesario porque así se distribuye el SDK de Firebase), y los módulos tienen una regla estricta: si el `import` no se puede resolver (sin conexión real a internet, justo lo que pasa offline), **el archivo entero no ejecuta ninguna línea** — ni siquiera código que esté escrito antes del import. Por eso, aunque yo había movido el código del mail al principio del archivo, eso no alcanzaba: si Firebase no podía conectarse, todo el script quedaba sin ejecutarse, incluyendo el día, las lecturas, y todo lo demás.

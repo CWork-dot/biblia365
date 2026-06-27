@@ -27,6 +27,20 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 
+// Pedirle al navegador que NO borre automáticamente nuestros datos
+// guardados localmente (importante sobre todo en iPhone/Safari, donde
+// el sistema puede limpiar este tipo de almacenamiento si no se pide
+// explícitamente que sea persistente). No hay garantía de que se
+// conceda, pero reduce mucho la probabilidad de que se pierda el
+// progreso guardado para uso offline.
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persist().then(function(granted){
+    window.__STORAGE_PERSIST_GRANTED__ = granted;
+  }).catch(function(){
+    window.__STORAGE_PERSIST_GRANTED__ = 'error';
+  });
+}
+
 window.__FIRESTORE_PERSISTENCE_STATUS__ = 'pendiente';
 enableIndexedDbPersistence(db).then(function(){
   window.__FIRESTORE_PERSISTENCE_STATUS__ = 'habilitada';

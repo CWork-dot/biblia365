@@ -62,9 +62,41 @@
 
   var saveTimer = null, dayTimer = null;
 
+  // ---------------------------------------------------------------
+  // Respaldo local del progreso en localStorage. Esto es independiente
+  // de la caché interna de Firestore (IndexedDB): localStorage es mucho
+  // más simple y estable, y en iPhone/Safari es mucho menos probable
+  // que el sistema lo borre automáticamente que el IndexedDB. Sirve
+  // como red de seguridad si por algún motivo la caché de Firestore
+  // no tiene el dato (recién instalado, borrado por el sistema, etc.)
+  // ---------------------------------------------------------------
+  function localBackupKey(key){ return 'biblia365_backup_' + key; }
+
+  function saveLocalBackup(key, data){
+    try {
+      localStorage.setItem(localBackupKey(key), JSON.stringify(data));
+    } catch(e){ /* localStorage lleno o no disponible, no es crítico */ }
+  }
+
+  function loadLocalBackup(key){
+    try {
+      var raw = localStorage.getItem(localBackupKey(key));
+      return raw ? JSON.parse(raw) : null;
+    } catch(e){ return null; }
+  }
+
   function saveProgress(){
     if(!userKey) return;
     setSavedTag('Guardando…');
+
+    // Respaldo local INMEDIATO, sin esperar al debounce ni a la red.
+    saveLocalBackup(userKey, {
+      email: userEmail.trim(),
+      diasCompletados: progress,
+      fechasCompletadas: completedDates,
+      ultimoDia: currentDay
+    });
+
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
       window.BibliaBackend.saveProgress(userKey, {
@@ -73,13 +105,17 @@
         fechasCompletadas: completedDates,
         ultimoDia: currentDay
       }).then(function(res){
-        setSavedTag(res && res.ok ? 'Guardado ✓' : 'Sin conexión — se guardará al volver');
+        setSavedTag(res && res.ok ? 'Guardado ✓' : 'Sin conexión — guardado solo en este dispositivo');
       });
     }, 350);
   }
 
   function saveCurrentDay(){
     if(!userKey) return;
+    var backup = loadLocalBackup(userKey) || {};
+    backup.ultimoDia = currentDay;
+    saveLocalBackup(userKey, backup);
+
     clearTimeout(dayTimer);
     dayTimer = setTimeout(function(){
       window.BibliaBackend.saveProgress(userKey, { ultimoDia: currentDay }, { onlyDay: true });
@@ -117,14 +153,39 @@
       completedDates = result.data.fechasCompletadas || {};
       currentDay = clampDay(result.data.ultimoDia || 1);
       setSavedTag('Sincronizado');
+      // Actualizamos también el respaldo local con lo que vino de la nube,
+      // así queda al día para la próxima vez que falte conexión.
+      saveLocalBackup(userKey, {
+        email: trimmed, diasCompletados: progress,
+        fechasCompletadas: completedDates, ultimoDia: currentDay
+      });
     } else if(result.error){
-      progress = {}; completedDates = {}; currentDay = 1;
-      setSavedTag('Sin conexión — guardando local');
+      // Sin conexión real a Firestore: usamos el respaldo local si existe,
+      // en vez de mostrar todo vacío.
+      var backup = loadLocalBackup(userKey);
+      if(backup){
+        progress = backup.diasCompletados || {};
+        completedDates = backup.fechasCompletadas || {};
+        currentDay = clampDay(backup.ultimoDia || 1);
+        setSavedTag('Sin conexión — mostrando tu último progreso guardado');
+      } else {
+        progress = {}; completedDates = {}; currentDay = 1;
+        setSavedTag('Sin conexión — guardando local');
+      }
     } else {
-      // no existe el documento todavía: lo creamos
-      progress = {}; completedDates = {}; currentDay = 1;
+      // no existe el documento todavía en la nube: revisamos si hay
+      // respaldo local de una sesión previa sin conexión antes de
+      // asumir que es la primera vez
+      var localBackup = loadLocalBackup(userKey);
+      if(localBackup){
+        progress = localBackup.diasCompletados || {};
+        completedDates = localBackup.fechasCompletadas || {};
+        currentDay = clampDay(localBackup.ultimoDia || 1);
+      } else {
+        progress = {}; completedDates = {}; currentDay = 1;
+      }
       await window.BibliaBackend.saveProgress(userKey, {
-        email: trimmed, diasCompletados: {}, fechasCompletadas: {}, ultimoDia: 1
+        email: trimmed, diasCompletados: progress, fechasCompletadas: completedDates, ultimoDia: currentDay
       }, { isCreate: true });
       setSavedTag('Sincronizado');
     }
