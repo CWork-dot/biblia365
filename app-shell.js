@@ -122,8 +122,18 @@
     }, 350);
   }
 
+  // Clave del último email para el que se disparó una carga,
+  // para evitar que dos rutas (blur y waitForRealBackend) lancen
+  // loadProgressFor en paralelo para el mismo email y se pisen.
+  var _loadingForEmail = null;
+
   async function loadProgressFor(email){
     var trimmed = email.trim();
+
+    // Si ya hay una carga en curso para este mismo email, ignorar.
+    if(trimmed && _loadingForEmail === trimmed) return;
+    if(trimmed) _loadingForEmail = trimmed;
+
     userEmail = trimmed;
     userKey = trimmed ? slugifyEmail(trimmed) : null;
     var avatarEl = document.getElementById('avatarInitial');
@@ -131,6 +141,7 @@
     setSavedTag('');
 
     if(!trimmed){
+      _loadingForEmail = null;
       progress = {}; completedDates = {}; currentDay = 1;
       rememberEmailOnThisDevice('');
       renderAll(); setSavedTag('');
@@ -138,6 +149,7 @@
     }
 
     if(!isValidEmail(trimmed)){
+      _loadingForEmail = null;
       setSavedTag('Mail inválido');
       progress = {}; completedDates = {}; currentDay = 1;
       renderAll();
@@ -148,6 +160,8 @@
     setSavedTag('Cargando…');
 
     var result = await window.BibliaBackend.loadProgress(userKey);
+    _loadingForEmail = null; // liberar para permitir futuras recargas del mismo email
+
     if(result.exists){
       progress = result.data.diasCompletados || {};
       completedDates = result.data.fechasCompletadas || {};
@@ -294,8 +308,29 @@
   // ---- Email input ----
   var LAST_EMAIL_KEY = 'biblia365_last_email';
   var nameInput = document.getElementById('userName');
-  nameInput.addEventListener('change', function(){ loadProgressFor(nameInput.value); });
-  nameInput.addEventListener('blur',   function(){ loadProgressFor(nameInput.value); });
+
+  function onEmailEntered(email){
+    // Solo cargamos si el backend real YA está disponible. Si no está
+    // listo todavía (el módulo de Firebase todavía no terminó de cargar),
+    // NO hacemos nada acá — el waitForRealBackend de la inicialización
+    // automática (más abajo) ya se encargará de llamar loadProgressFor
+    // cuando el backend esté listo. Evitamos así dos llamadas paralelas
+    // que se pisan entre sí.
+    if(window.BibliaBackend && window.BibliaBackend.ready){
+      loadProgressFor(email);
+    }
+    // Si el backend no está listo y el email fue tipeado manualmente
+    // (no es la sugerencia automática), igual queremos que cargue cuando
+    // esté listo — pero solo si no hay ya una carga programada.
+    else if(!_loadingForEmail){
+      waitForRealBackend(3000).then(function(){
+        loadProgressFor(email);
+      });
+    }
+  }
+
+  nameInput.addEventListener('change', function(){ onEmailEntered(nameInput.value); });
+  nameInput.addEventListener('blur',   function(){ onEmailEntered(nameInput.value); });
   nameInput.addEventListener('keydown',function(e){ if(e.key==='Enter') nameInput.blur(); });
 
   function rememberEmailOnThisDevice(email){
